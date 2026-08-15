@@ -534,9 +534,7 @@ ReportFail:
     ld l, a
     ld a, [wName + 1]
     ld h, a
-    push hl
     call PrintLine
-    pop hl
     call RememberFailure
 
     ld a, [wHaveNums]
@@ -617,20 +615,28 @@ PrintCodeLower:
 DocsBase::
     db "https://github.com/Alchemy86/TerminalGB/blob/main/docs/",0
 
+; Remember the CODE of a failing check -- the area prefix and the number --
+; so the screen can list them at the end. Ten slots: the screen is eighteen
+; rows and a machine broken enough to fail more than ten checks is not going to
+; be diagnosed from a list anyway, it is going to be diagnosed from the log.
+DEF FAIL_SLOTS EQU 10
+
 RememberFailure:
     ld a, [wFailCount]
-    cp 10
+    cp FAIL_SLOTS
     ret nc
     ld e, a
     ld d, 0
-    push hl
     ld hl, wFailList
     add hl, de
     add hl, de
-    pop de
-    ld [hl], e
-    inc hl
-    ld [hl], d
+    add hl, de              ; three bytes an entry
+    ld a, [wPrefix]
+    ld [hl+], a
+    ld a, [wPrefix + 1]
+    ld [hl+], a
+    ld a, [wNum]
+    ld [hl], a
     ld a, [wFailCount]
     inc a
     ld [wFailCount], a
@@ -715,17 +721,47 @@ FinalReport:
 .noSkips
     call PrintNewline
 
+    ; The cost line, twice, because the two sinks are not the same width. The
+    ; serial wording is what a host greps and does not change; the screen is
+    ; twenty columns, and the long form wrapped mid-word -- "sen" on one row
+    ; and "t 6949 B" on the next -- which is the first thing anybody sees.
+    ;
+    ; Both lines quote the same number, snapshotted here: the counter is live,
+    ; and printing the serial line moves it on by the length of its own
+    ; wording, which would leave the screen and the log disagreeing about the
+    ; same run by twenty-two bytes.
+    ld a, [wSerialSent]
+    ld [wScratch + 90], a
+    ld a, [wSerialSent + 1]
+    ld [wScratch + 91], a
+
+    ld a, SINK_SCREEN
+    ld [wSinks], a
+    ld hl, wFrames
+    call PrintWordDec
+    ld hl, .framesShort
+    call PrintStr
+    ld hl, wScratch + 90
+    call PrintWordDec
+    ld hl, .sentTail
+    call PrintStr
+    call PrintNewline
+
+    ld a, SINK_SERIAL
+    ld [wSinks], a
     ld hl, .frames
     call PrintStr
     ld hl, wFrames
     call PrintWordDec
     ld hl, .framesTail
     call PrintStr
-    ld hl, wSerialSent
+    ld hl, wScratch + 90
     call PrintWordDec
     ld hl, .sentTail
     call PrintStr
     call PrintNewline
+    ld a, SINK_SCREEN | SINK_SERIAL
+    ld [wSinks], a
 
     ld a, [wFailed]
     ld b, a
@@ -747,6 +783,7 @@ FinalReport:
 .skippedTail db " skipped",0
 .frames db "cost ",0
 .framesTail db " frames, sent ",0
+.framesShort db " frames ",0
 .sentTail   db " B",0
 ; The last line is what a host greps for. Blargg's convention, deliberately:
 ; every existing Game Boy test runner already understands these two words.
@@ -772,6 +809,10 @@ TotalChecks:
     ld [wScratch + 1], a
     ret
 
+; ScreenFailures — the codes, on the screen, two to a row, and where to read
+; about them. The serial log already carries the full explanation and a URL per
+; failure; twenty columns cannot, and a code somebody can look up is far more
+; use there than half a sentence of prose.
 ScreenFailures:
     ld a, SINK_SCREEN
     ld [wSinks], a
@@ -781,26 +822,58 @@ ScreenFailures:
     or a
     jr z, .done
     ld b, a
+    ld c, 0                 ; how many codes are already on this row
     ld hl, wFailList
 .next
-    push bc
     ld a, [hl+]
     ld e, a
     ld a, [hl+]
     ld d, a
+    ld a, [hl+]
     push hl
+    push bc
+    ld [wScratch + 94], a
+    ld hl, .gb
+    call PrintStr
     ld h, d
     ld l, e
-    call PrintLine
-    pop hl
+    call PrintStr
+    ld a, '-'
+    call PrintChar
+    ld a, [wScratch + 94]
+    call PrintDec2
     pop bc
+    ; Two nine-character codes and a space is nineteen columns; a third would
+    ; wrap and split a code across two rows, which is the one thing a code
+    ; must never do.
+    inc c
+    ld a, c
+    cp 2
+    jr c, .space
+    ld c, 0
+    call PrintNewline
+    jr .row
+.space
+    ld a, ' '
+    call PrintChar
+.row
+    pop hl
     dec b
     jr nz, .next
+    ld a, c
+    or a
+    jr z, .listed
+    call PrintNewline
+.listed
+    ld hl, .where
+    call PrintLine
 .done
     ld a, SINK_SCREEN | SINK_SERIAL
     ld [wSinks], a
     ret
-.hdr db "failed:",0
+.hdr   db "failed:",0
+.gb    db "GB-",0
+.where db "-> docs/CHECKS.md",0
 
 ; ---------------------------------------------------------------------------
 ; The restart vector the timing check calls. It is only here so that `RST $38`

@@ -1,0 +1,208 @@
+GBSelfTest v1
+Every expectation below is either computed a second way on this
+machine or is a documented hardware constant. None came from an emulator.
+Every code below is a heading on https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md
+console: DMG
+handover: AF=01B0 BC=0013 DE=00D8 HL=014D SP=FFFE IF=E1
+
+--- CPU: instruction behaviour and flags
+GB-CPU-01 ok   ADD and ADC, against a counter-built adder
+GB-CPU-02 ok   SUB, SBC and CP
+GB-CPU-03 ok   AND, OR, XOR and CPL by identity
+GB-CPU-04 ok   INC r and DEC r flags
+GB-CPU-05 ok   rotates and shifts are invertible
+GB-CPU-06 ok   BIT, RES and SET
+GB-CPU-07 ok   POP AF masks the unused flag bits
+GB-CPU-08 ok   LD HL,SP+e flags come from the low byte
+GB-CPU-09 ok   ADD HL,rr flags
+GB-CPU-10 ok   SCF, CCF and CPL
+GB-CPU-11 ok   INC rr and DEC rr set no flags
+GB-CPU-12 ok   DAA against decimal arithmetic
+GB-CPU-13 ok   the one-byte rotates always clear Z
+GB-CPU-14 ok   INC and DEC through HL
+GB-CPU-15 ok   the pointer forms of LD move HL
+--- CYC: instruction and memory timing
+GB-CYC-01 ok   loads and memory accesses
+GB-CYC-02 ok   arithmetic and sixteen-bit operations
+GB-CYC-03 ok   PUSH, POP, CALL and RET
+GB-CYC-04 ok   jumps taken and not taken
+GB-CYC-05 ok   CB-prefixed operations
+GB-CYC-06 ok   restarts, returns and the register-addressed load
+--- TIM: the divider and the timer
+GB-TIM-01 ok   the divider and the timer share one counter
+GB-TIM-02 ok   writing DIV clears it
+GB-TIM-03 ok   all four TAC rates, measured against DIV
+GB-TIM-04 ok   TAC bit 2 stops the timer
+GB-TIM-05 ok   overflow reloads TMA and raises the interrupt
+GB-TIM-06 FAIL writing DIV can itself clock the timer
+      got $0000  want $0001
+      -> clearing the divider while the timer's watched bit was set did not increment TIMA. The timer counts falling edges of one bit of the divider's own counter, and a write that clears that bit IS a falling edge
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-tim-06
+GB-TIM-07 FAIL switching the timer off can clock it once more
+      got $0000  want $0001
+      -> clearing the enable bit while the timer's watched bit was set did not increment TIMA. What is counted is the falling edge of the watched bit ANDed with the enable, so switching the enable off is itself a falling edge
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-tim-07
+--- INT: interrupts
+GB-INT-01 ok   IF's top three bits read as one
+GB-INT-02 FAIL EI is delayed and DI cancels it
+      -> an interrupt was serviced between EI and the instruction after it. EI sets a latch that only reaches the master enable one instruction later, and a DI landing in that window clears it again
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-int-02
+GB-INT-03 ok   EI then NOP does take the interrupt
+GB-INT-04 ok   the lowest vector wins
+GB-INT-05 FAIL HALT with IME clear and a pending interrupt
+      got $0001  want $0002
+      -> the byte after HALT ran once, not twice. When HALT is reached with interrupts disabled and one already pending, the fetch that follows does not advance the program counter
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-int-05
+GB-INT-06 ok   HALT wakes without servicing when IME is clear
+GB-INT-07 FAIL dispatch costs five machine cycles
+      got $005B  want $0030
+      -> taking an interrupt is five machine cycles: two idle, the high half of the program counter pushed, the low half pushed, then the vector fetched. A flat sixteen or twenty T-cycles applied in one lump does not measure the same
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-int-07
+GB-INT-08 ok   IE stores all eight bits, IF does not
+GB-INT-09 ok   RETI restores the master enable
+GB-INT-10 ok   clearing IF cancels a pending interrupt
+GB-INT-11 ok   clearing IE prevents dispatch and keeps the flag
+--- MEM: the memory map
+GB-MEM-01 ok   work RAM appears again at $E000
+GB-MEM-02 ok   high RAM is its own 127 bytes
+GB-MEM-03 ok   writes to the ROM area do not stick
+GB-MEM-04 ok   video RAM is eight kilobytes
+GB-MEM-05 ok   object memory is 160 bytes and stops
+--- PPU: timing and the rendering fingerprint
+GB-PPU-01 FAIL a frame is 70224 cycles, measured against DIV
+      got $0119  want $0112
+      -> the divider and the display disagree about how long a frame is. A frame is 154 lines of 456 cycles, which is 70224 cycles, which is 274.3 divider increments
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-01
+GB-PPU-02 ok   a scanline is 456 cycles
+GB-PPU-03 ok   LY counts 0 to 153 and wraps
+GB-PPU-04 ok   STAT reports mode 2, then 3, then 0
+GB-PPU-05 ok   the LY equals LYC flag and its interrupt
+GB-PPU-06 ok   mode 3 is 172 cycles with nothing to draw
+GB-PPU-07 FAIL fine scrolling lengthens mode 3
+      got $0000  want $0001
+      -> an SCX of 4 must make mode 3 four cycles longer: the first four pixels of the leftmost tile are fetched and thrown away. A mode 3 of fixed length cannot show this
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-07
+GB-PPU-08 FAIL objects on a line lengthen mode 3
+      got $0000  want $000F
+      -> ten objects on a line did not lengthen mode 3. Each one stops the background fetcher for at least six cycles while its own row is fetched; a renderer that draws the line in one go and charges a fixed 172 cycles reports no penalty at all
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-08
+GB-PPU-09 FAIL the window lengthens mode 3
+      got $0000  want $0002
+      -> starting the window did not lengthen mode 3. Taking it over costs at least six cycles: the fetcher throws away what it had and begins again from the window's own map
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-09
+GB-PPU-10 FAIL VRAM is unreadable during mode 3
+      got $0000  want $00FF
+      -> the CPU read real data out of video RAM while the fetcher owned the bus. During mode 3 a read must return $FF; a game that writes there mid-line is relying on it being ignored
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-10
+GB-PPU-11 FAIL OAM is unreadable during modes 2 and 3
+      got $0012  want $00FF
+      -> the CPU read object memory while the PPU was scanning it. During modes 2 and 3 a read must return $FF, which is why every game copies its objects in during the blank
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-11
+GB-PPU-12 ok   only ten objects are drawn per line
+GB-PPU-13 ok   objects switched off in LCDC cost nothing
+GB-PPU-14 ok   the LCD off means LY 0 and mode 0
+GB-PPU-15 ok   the STAT interrupt is one line, not four
+GB-PPU-16 FAIL writing STAT raises a spurious interrupt
+      got $0000  want $0002
+      -> writing STAT with no condition selected did not raise the interrupt. On this machine the write acts for one cycle as though every condition were selected, and games depend on it
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-16
+GB-PPU-17 ok   a window past the right edge costs nothing
+GB-PPU-18 FAIL an object off the left edge still costs
+      got $0000  want $000C
+      -> ten objects placed entirely off the left of the screen cost the fetcher nothing. They are still found by the scan and their rows are still fetched; only the drawing is thrown away
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-18
+GB-PPU-19 ok   vertical scrolling costs the fetcher nothing
+--- DMA: the object transfer
+GB-DMA-01 ok   the transfer copies 160 bytes
+GB-DMA-02 FAIL the transfer is not instantaneous
+      got $0040  want $00FF
+      -> object memory was readable one instruction after the transfer began, and already held the new byte. The transfer takes 160 machine cycles and the CPU cannot see object memory during them
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-dma-02
+GB-DMA-03 ok   $FF46 reads back the page written
+--- APU: registers and the length counter
+GB-APU-01 FAIL every register reads back its documented bits
+      got $00FF  want $0080
+      -> a sound register did not read back its documented bits. Write-only and unused bits read as ones: the reported value is what was written OR the mask, and a register that returns exactly what was written is wrong
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-apu-01
+GB-APU-02 FAIL powering off clears the registers and locks them
+      got $00F3  want $0000
+      -> clearing bit 7 of NR52 must zero NR10 through NR51
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-apu-02
+GB-APU-03 FAIL NR52 reports which channels are on
+      got $0080  want $00F1
+      -> triggering a channel whose converter is on must set its bit in NR52
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-apu-03
+GB-APU-04 FAIL wave RAM is readable while the channel is off
+      got $00E0  want $00A0
+      -> the sixteen bytes at $FF30 did not read back what was written. With channel 3 switched off they are plain memory; only while it is playing does the channel own them
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-apu-04
+GB-APU-05 FAIL a channel with its converter off stays off
+      -> a channel with its converter on and freshly triggered did not report itself playing
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-apu-05
+GB-APU-06 FAIL powering off switches every channel off
+      -> a channel with its converter on and freshly triggered did not report itself playing, so this check could not ask the question
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-apu-06
+GB-APU-07 FAIL wave memory survives a power cycle
+      got $00FA  want $005A
+      -> wave memory was cleared by a power cycle of the sound chip. The registers are cleared; these sixteen bytes are not, and a driver that loads a waveform before powering up depends on that
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-apu-07
+--- MBC: banking and cartridge RAM
+GB-MBC-01 ok   each ROM bank reads back its own number
+GB-MBC-02 ok   bank 0 is translated to bank 1
+GB-MBC-03 ok   cartridge RAM only answers when enabled
+GB-MBC-04 ok   a bank number past the end wraps
+GB-MBC-05 ok   the RAM enable decodes four bits only
+--- BOOT: the state handed over at $0100
+GB-BOOT-01 ok   the stack pointer starts at $FFFE
+GB-BOOT-02 ok   A identifies the console
+GB-BOOT-03 ok   the whole register set matches this console
+GB-BOOT-04 FAIL unimplemented I/O reads back as ones
+      got $0002  want $00FF
+      -> an address in the register page with nothing behind it returned something other than $FF. Nothing drives the bus there, so it floats high
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-boot-04
+GB-BOOT-05 ok   the boot ROM leaves its vertical blank pending
+--- SER: the link port
+GB-SER-01 ok   SB is a plain read/write register
+GB-SER-02 FAIL SC's unused bits read as ones
+      got $0000  want $007C
+      -> bits 2 to 6 of SC were never implemented and must read back as ones
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ser-02
+.
+GB-SER-03 ok   an internally clocked transfer completes
+.......................................................B-SER-04 ok   an externally clocked transfer does not
+
+--- coverage
+This cartridge tests the machine from the inside. That bounds what it
+can see, and the bounds are these:
+
+NOT TESTED, and not testable from a cartridge:
+  * the composited picture. There is no framebuffer to read: the PPU
+    streams pixels to the panel and keeps none of them. Pixel accuracy
+    needs a host holding a reference image -- use the Mealybug Tearoom
+    tests for that. What IS tested here is the rendering FINGERPRINT:
+    mode 3 gets longer when the fetcher has more work to do, and that
+    is measurable from inside to a resolution of four dots.
+  * anything finer than four dots. The CPU can only observe on machine
+    cycle boundaries, so a one, two or three dot difference -- an SCX of
+    1, 2 or 3 for instance -- is below the floor for any cartridge.
+  * the four-dot window at the top of the last scanline, where LY
+    reads 153 before reading 0. It is below the resolution above, so
+    GB-PPU-03 accepts either reading and says so.
+  * sound as sound. Register behaviour and the length counter are
+    checked; what comes out of the speaker is not.
+  * the boot ROM itself, which has already finished.
+  * other consoles. Every run reports which machine it thinks it is on
+    and skips what does not apply, rather than guessing.
+
+DELIBERATELY THIN, because other people cover it far better:
+  * exhaustive instruction sweeps -- Blargg's cpu_instrs.
+  * cycle-exact PPU and timer edges -- the Mooneye test suite.
+  * the sound chip in detail -- SameSuite and Blargg's dmg_sound.
+  * mappers in detail -- the MBC test suites.
+This is a first-response cartridge: broad, fast, self-explaining, and
+one file. It is not a replacement for any of the above.
+
+
+TOTAL 64/87 checks
+cost 133 frames, sent 13502 B
+Failed

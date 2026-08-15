@@ -1,0 +1,142 @@
+GBSelfTest v1
+Every expectation below is either computed a second way on this
+machine or is a documented hardware constant. None came from an emulator.
+Every code below is a heading on https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md
+console: DMG
+handover: AF=01B0 BC=0013 DE=00D8 HL=014D SP=FFFE IF=E1
+
+--- CPU: instruction behaviour and flags
+GB-CPU-01 ok   ADD and ADC, against a counter-built adder
+GB-CPU-02 ok   SUB, SBC and CP
+GB-CPU-03 ok   AND, OR, XOR and CPL by identity
+GB-CPU-04 ok   INC r and DEC r flags
+GB-CPU-05 ok   rotates and shifts are invertible
+GB-CPU-06 ok   BIT, RES and SET
+GB-CPU-07 ok   POP AF masks the unused flag bits
+GB-CPU-08 ok   LD HL,SP+e flags come from the low byte
+GB-CPU-09 ok   ADD HL,rr flags
+GB-CPU-10 ok   SCF, CCF and CPL
+GB-CPU-11 ok   INC rr and DEC rr set no flags
+GB-CPU-12 ok   DAA against decimal arithmetic
+GB-CPU-13 ok   the one-byte rotates always clear Z
+GB-CPU-14 ok   INC and DEC through HL
+GB-CPU-15 ok   the pointer forms of LD move HL
+--- CYC: instruction and memory timing
+GB-CYC-01 ok   loads and memory accesses
+GB-CYC-02 ok   arithmetic and sixteen-bit operations
+GB-CYC-03 ok   PUSH, POP, CALL and RET
+GB-CYC-04 ok   jumps taken and not taken
+GB-CYC-05 ok   CB-prefixed operations
+GB-CYC-06 ok   restarts, returns and the register-addressed load
+--- TIM: the divider and the timer
+GB-TIM-01 ok   the divider and the timer share one counter
+GB-TIM-02 ok   writing DIV clears it
+GB-TIM-03 ok   all four TAC rates, measured against DIV
+GB-TIM-04 ok   TAC bit 2 stops the timer
+GB-TIM-05 ok   overflow reloads TMA and raises the interrupt
+GB-TIM-06 ok   writing DIV can itself clock the timer
+GB-TIM-07 ok   switching the timer off can clock it once more
+--- INT: interrupts
+GB-INT-01 ok   IF's top three bits read as one
+GB-INT-02 ok   EI is delayed and DI cancels it
+GB-INT-03 ok   EI then NOP does take the interrupt
+GB-INT-04 ok   the lowest vector wins
+GB-INT-05 ok   HALT with IME clear and a pending interrupt
+GB-INT-06 ok   HALT wakes without servicing when IME is clear
+GB-INT-07 ok   dispatch costs five machine cycles
+GB-INT-08 ok   IE stores all eight bits, IF does not
+GB-INT-09 ok   RETI restores the master enable
+GB-INT-10 ok   clearing IF cancels a pending interrupt
+GB-INT-11 ok   clearing IE prevents dispatch and keeps the flag
+--- MEM: the memory map
+GB-MEM-01 ok   work RAM appears again at $E000
+GB-MEM-02 ok   high RAM is its own 127 bytes
+GB-MEM-03 ok   writes to the ROM area do not stick
+GB-MEM-04 ok   video RAM is eight kilobytes
+GB-MEM-05 ok   object memory is 160 bytes and stops
+--- PPU: timing and the rendering fingerprint
+GB-PPU-01 ok   a frame is 70224 cycles, measured against DIV
+GB-PPU-02 ok   a scanline is 456 cycles
+GB-PPU-03 ok   LY counts 0 to 153 and wraps
+GB-PPU-04 ok   STAT reports mode 2, then 3, then 0
+GB-PPU-05 ok   the LY equals LYC flag and its interrupt
+GB-PPU-06 ok   mode 3 is 172 cycles with nothing to draw
+GB-PPU-07 ok   fine scrolling lengthens mode 3
+GB-PPU-08 ok   objects on a line lengthen mode 3
+GB-PPU-09 ok   the window lengthens mode 3
+GB-PPU-10 ok   VRAM is unreadable during mode 3
+GB-PPU-11 ok   OAM is unreadable during modes 2 and 3
+GB-PPU-12 ok   only ten objects are drawn per line
+GB-PPU-13 ok   objects switched off in LCDC cost nothing
+GB-PPU-14 ok   the LCD off means LY 0 and mode 0
+GB-PPU-15 ok   the STAT interrupt is one line, not four
+GB-PPU-16 ok   writing STAT raises a spurious interrupt
+GB-PPU-17 ok   a window past the right edge costs nothing
+GB-PPU-18 ok   an object off the left edge still costs
+GB-PPU-19 ok   vertical scrolling costs the fetcher nothing
+--- DMA: the object transfer
+GB-DMA-01 ok   the transfer copies 160 bytes
+GB-DMA-02 ok   the transfer is not instantaneous
+GB-DMA-03 ok   $FF46 reads back the page written
+--- APU: registers and the length counter
+GB-APU-01 ok   every register reads back its documented bits
+GB-APU-02 ok   powering off clears the registers and locks them
+GB-APU-03 ok   NR52 reports which channels are on
+GB-APU-04 ok   wave RAM is readable while the channel is off
+GB-APU-05 ok   a channel with its converter off stays off
+GB-APU-06 ok   powering off switches every channel off
+GB-APU-07 ok   wave memory survives a power cycle
+--- MBC: banking and cartridge RAM
+GB-MBC-01 ok   each ROM bank reads back its own number
+GB-MBC-02 ok   bank 0 is translated to bank 1
+GB-MBC-03 ok   cartridge RAM only answers when enabled
+GB-MBC-04 ok   a bank number past the end wraps
+GB-MBC-05 ok   the RAM enable decodes four bits only
+--- BOOT: the state handed over at $0100
+GB-BOOT-01 ok   the stack pointer starts at $FFFE
+GB-BOOT-02 ok   A identifies the console
+GB-BOOT-03 ok   the whole register set matches this console
+GB-BOOT-04 ok   unimplemented I/O reads back as ones
+GB-BOOT-05 ok   the boot ROM leaves its vertical blank pending
+--- SER: the link port
+GB-SER-01 ok   SB is a plain read/write register
+GB-SER-02 ok   SC's unused bits read as ones
+.
+GB-SER-03 ok   an internally clocked transfer completes
+GB-SER-04 ok   an externally clocked transfer does not
+
+--- coverage
+This cartridge tests the machine from the inside. That bounds what it
+can see, and the bounds are these:
+
+NOT TESTED, and not testable from a cartridge:
+  * the composited picture. There is no framebuffer to read: the PPU
+    streams pixels to the panel and keeps none of them. Pixel accuracy
+    needs a host holding a reference image -- use the Mealybug Tearoom
+    tests for that. What IS tested here is the rendering FINGERPRINT:
+    mode 3 gets longer when the fetcher has more work to do, and that
+    is measurable from inside to a resolution of four dots.
+  * anything finer than four dots. The CPU can only observe on machine
+    cycle boundaries, so a one, two or three dot difference -- an SCX of
+    1, 2 or 3 for instance -- is below the floor for any cartridge.
+  * the four-dot window at the top of the last scanline, where LY
+    reads 153 before reading 0. It is below the resolution above, so
+    GB-PPU-03 accepts either reading and says so.
+  * sound as sound. Register behaviour and the length counter are
+    checked; what comes out of the speaker is not.
+  * the boot ROM itself, which has already finished.
+  * other consoles. Every run reports which machine it thinks it is on
+    and skips what does not apply, rather than guessing.
+
+DELIBERATELY THIN, because other people cover it far better:
+  * exhaustive instruction sweeps -- Blargg's cpu_instrs.
+  * cycle-exact PPU and timer edges -- the Mooneye test suite.
+  * the sound chip in detail -- SameSuite and Blargg's dmg_sound.
+  * mappers in detail -- the MBC test suites.
+This is a first-response cartridge: broad, fast, self-explaining, and
+one file. It is not a replacement for any of the above.
+
+
+TOTAL 87/87 checks
+cost 132 frames, sent 6927 B
+Passed

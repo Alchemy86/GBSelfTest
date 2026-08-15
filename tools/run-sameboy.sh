@@ -5,7 +5,10 @@
 # anything: its expected values would be whatever that emulator does. This is
 # how the suite is checked against an implementation nobody here wrote.
 #
-#   tools/run-sameboy.sh [model] [frames]
+#   tools/run-sameboy.sh [model] [frames] [screen.ppm]
+#
+# With a third argument the screen the cartridge left behind is written out
+# too, as a binary PPM at the native 160x144. tools/screenshots.sh uses that.
 #
 # SameBoy is fetched and built here, never vendored: it is somebody else's
 # work under somebody else's licence (Expat). Needs a C compiler, git and make.
@@ -13,12 +16,14 @@ set -eu
 
 MODEL="${1:-dmg}"
 FRAMES="${2:-4000}"
+SHOT="${3:-}"
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DEST="$HERE/.sameboy"
 SAMEBOY_COMMIT="${SAMEBOY_COMMIT:-213a12ce93d66b105a113debd9396306066a7cfc}"
 RGBDS_DIR="${RGBDS:-}"
 
-if [ ! -x "$DEST/sameboy-serial" ]; then
+if [ ! -x "$DEST/sameboy-serial" ] ||
+   [ "$HERE/tools/sameboy-serial.c" -nt "$DEST/sameboy-serial" ]; then
     mkdir -p "$DEST"
     if [ ! -d "$DEST/SameBoy" ]; then
         git clone --quiet https://github.com/LIJI32/SameBoy "$DEST/SameBoy"
@@ -34,4 +39,4 @@ if [ ! -x "$DEST/sameboy-serial" ]; then
 fi
 
 exec "$DEST/sameboy-serial" "$DEST/SameBoy/build/bin/tester" "$MODEL" \
-    "$HERE/dist/gbselftest.gb" "$FRAMES"
+    "$HERE/dist/gbselftest.gb" "$FRAMES" ${SHOT:+"$SHOT"}

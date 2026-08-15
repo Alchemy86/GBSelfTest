@@ -1,0 +1,4 @@
+GB-TIM-06 FAIL writing DIV can itself clock the timer
+      got $0000  want $0001
+      -> clearing the divider while the timer's watched bit was set did not increment TIMA. The timer counts falling edges of one bit of the divider's own counter, and a write that clears that bit IS a falling edge
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-tim-06

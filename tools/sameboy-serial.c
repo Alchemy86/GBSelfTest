@@ -11,10 +11,16 @@
  * wrote to $FF01. Nothing is sent back: the far end of the cable is not
  * connected, and the cartridge's own GB-SER checks are written knowing that.
  *
+ * Given a fifth argument it also writes the screen the cartridge left behind,
+ * as a binary PPM of the emulator's own framebuffer -- the report as pixels,
+ * at the native 160x144 with nothing scaled, filtered or cropped. That is what
+ * docs/screenshots are made of, and making them a build step rather than a
+ * hand-crop is the only way the pictures in the README stay true.
+ *
  * Build with tools/run-sameboy.sh. SameBoy is Expat-licensed and is not
  * vendored here; this file is ours and calls only its public Core API.
  *
- *   sameboy-serial <bootrom-dir> <model> <rom> [frames]
+ *   sameboy-serial <bootrom-dir> <model> <rom> [frames] [screen.ppm]
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +48,28 @@ static bool bit_end(GB_gameboy_t *gb) { return true; }
 static char *no_input(GB_gameboy_t *gb) { return NULL; }
 static void no_vblank(GB_gameboy_t *gb, GB_vblank_type_t kind) { }
 
+/* The framebuffer is 32 bits a pixel and SameBoy asks us how to pack them. */
+static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
+{
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
+/* Binary PPM: three bytes a pixel, no palette, no compression, no library.
+ * Anything can read it, and `magick` turns it into the PNG the docs carry. */
+static int write_ppm(const char *path, unsigned w, unsigned h)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return 1;
+    fprintf(f, "P6\n%u %u\n255\n", w, h);
+    for (unsigned i = 0; i < w * h; i++) {
+        uint32_t p = pixels[i];
+        fputc((p >> 16) & 0xFF, f);
+        fputc((p >> 8) & 0xFF, f);
+        fputc(p & 0xFF, f);
+    }
+    return fclose(f) != 0;
+}
+
 struct console { const char *name; GB_model_t model; const char *boot; };
 
 static const struct console CONSOLES[] = {
@@ -59,13 +87,14 @@ static const struct console CONSOLES[] = {
 int main(int argc, char **argv)
 {
     if (argc < 4) {
-        fprintf(stderr, "usage: %s <bootrom-dir> <model> <rom> [frames]\n"
+        fprintf(stderr, "usage: %s <bootrom-dir> <model> <rom> [frames] [screen.ppm]\n"
                         "  model: dmg mgb sgb cgb0 cgbB cgbC cgbD cgbE agb\n",
                 argv[0]);
         return 2;
     }
     const char *bootdir = argv[1], *model = argv[2], *rom = argv[3];
     int frames = argc > 4 ? atoi(argv[4]) : 4000;
+    const char *shot = argc > 5 ? argv[5] : NULL;
 
     const struct console *c = NULL;
     for (size_t i = 0; i < sizeof CONSOLES / sizeof *CONSOLES; i++)
@@ -83,11 +112,24 @@ int main(int argc, char **argv)
     GB_set_pixels_output(&gb, pixels);
     GB_set_vblank_callback(&gb, no_vblank);
     GB_set_async_input_callback(&gb, no_input);
-    GB_set_rendering_disabled(&gb, true);
+    /* Drawing costs time and nothing reads the picture unless a shot was
+     * asked for. The cartridge's own verdict is identical either way: it
+     * never reads back what it drew. */
+    GB_set_rendering_disabled(&gb, shot == NULL);
+    GB_set_rgb_encode_callback(&gb, rgb_encode);
+    /* The DMG's own four shades, so the picture in the documentation is the
+     * colour the console it is testing actually is. */
+    GB_set_palette(&gb, &GB_PALETTE_DMG);
     GB_set_serial_transfer_bit_start_callback(&gb, bit_start);
     GB_set_serial_transfer_bit_end_callback(&gb, bit_end);
 
     for (int f = 0; f < frames; f++) GB_run_frame(&gb);
     fflush(stdout);
+
+    if (shot && write_ppm(shot, GB_get_screen_width(&gb),
+                          GB_get_screen_height(&gb))) {
+        fprintf(stderr, "cannot write %s\n", shot);
+        return 1;
+    }
     return 0;
 }

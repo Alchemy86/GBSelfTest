@@ -1,0 +1,6 @@
+# The link-port transcripts are stored exactly as the cartridge sent them, CR LF
+# and all: they are evidence, and normalising their line endings would mean the
+# committed file is not what came out of the run. Without this, a checkout with
+# core.autocrlf=input rewrites them and tools/screenshots.sh appears to change
+# files it did not.
+docs/screenshots/*.txt -text

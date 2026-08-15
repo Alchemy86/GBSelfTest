@@ -58,7 +58,11 @@ DEF wAreaPass   RB 1
 DEF wAreaFail   RB 1
 DEF wAreaSkip   RB 1
 DEF wFrames     RW 1
-DEF wFailList   RB 2 * 10
+; Three bytes a failure: the area prefix's address and the check number, which
+; is everything the screen needs to spell the stable code back out. It used to
+; hold the check's title instead, and a title is prose -- it wrapped over two
+; of the twenty columns available and told a reader nothing they could look up.
+DEF wFailList   RB 3 * 10
 DEF wFailCount  RB 1
 
 ; --- the descriptor of the check currently running

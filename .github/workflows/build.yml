@@ -38,6 +38,11 @@ jobs:
       - name: the check reference matches the registry
         run: tools/gen-docs.py --check
 
+      # A README that sells a test tool is held to the tool's own standard:
+      # every number in it came out of a run, and this is what says so.
+      - name: the README matches the build
+        run: tools/check-readme.py
+
       - name: run it on SameBoy, which nobody here wrote
         run: |
           tools/run-sameboy.sh dmg 20000 | tee /tmp/report.txt

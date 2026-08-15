@@ -6,8 +6,8 @@
 ;
 ; Storage is one byte per row, five pixels wide, written as 5-bit binary and
 ; shifted into the top of the byte at assembly time so the source reads as a
-; picture of the letter. Seven rows per glyph, 64 glyphs, covering ASCII
-; $20..$5F — which is every character this cartridge can print.
+; picture of the letter. Seven rows per glyph, 96 glyphs, covering ASCII
+; $20..$7F — which is every character this cartridge can print.
 ;
 ; At run time each glyph is expanded into an 8x8 two-bits-per-pixel tile whose
 ; TILE ID IS THE CHARACTER'S ASCII CODE. That is deliberate and it is the
@@ -19,7 +19,7 @@
 INCLUDE "hardware.inc"
 
 DEF FONT_FIRST EQU $20
-DEF FONT_LAST  EQU $5F
+DEF FONT_LAST  EQU $7F
 DEF FONT_ROWS  EQU 7
 
 MACRO glyph
@@ -158,6 +158,83 @@ FontData::
     glyph %00100,%01010,%10001,%00000,%00000,%00000,%00000
     ; $5F _
     glyph %00000,%00000,%00000,%00000,%00000,%00000,%11111
+
+    ; ---- lower case ------------------------------------------------------
+    ; The report is written in lower case -- "ok", "checks", "cost", "Passed"
+    ; -- and the serial log had always carried it, so a screen that stopped at
+    ; $5F printed a question mark for every one of them and the verdict read
+    ; `P?????`. These are the same 5x7 grid and the same baseline as the
+    ; capitals: seven rows, ink ending on row six.
+    ;
+    ; g j p q y have no descender. The eighth row of the tile is the gap
+    ; between text rows and is deliberately left blank, so a tail drawn into it
+    ; would touch the line below; every small screen font of this height makes
+    ; the same trade and curls the tail up into the body instead.
+    ; $60 `
+    glyph %01000,%00100,%00000,%00000,%00000,%00000,%00000
+    ; $61 a
+    glyph %00000,%00000,%01110,%00001,%01111,%10001,%01111
+    ; $62 b
+    glyph %10000,%10000,%11110,%10001,%10001,%10001,%11110
+    ; $63 c
+    glyph %00000,%00000,%01110,%10001,%10000,%10001,%01110
+    ; $64 d
+    glyph %00001,%00001,%01111,%10001,%10001,%10001,%01111
+    ; $65 e
+    glyph %00000,%00000,%01110,%10001,%11111,%10000,%01110
+    ; $66 f
+    glyph %00110,%01001,%01000,%11110,%01000,%01000,%01000
+    ; $67 g
+    glyph %00000,%00000,%01111,%10001,%01111,%00001,%01110
+    ; $68 h
+    glyph %10000,%10000,%10110,%11001,%10001,%10001,%10001
+    ; $69 i
+    glyph %00100,%00000,%01100,%00100,%00100,%00100,%01110
+    ; $6A j
+    glyph %00010,%00000,%00110,%00010,%00010,%10010,%01100
+    ; $6B k
+    glyph %10000,%10000,%10010,%10100,%11000,%10100,%10010
+    ; $6C l
+    glyph %01100,%00100,%00100,%00100,%00100,%00100,%01110
+    ; $6D m
+    glyph %00000,%00000,%11010,%10101,%10101,%10101,%10101
+    ; $6E n
+    glyph %00000,%00000,%10110,%11001,%10001,%10001,%10001
+    ; $6F o
+    glyph %00000,%00000,%01110,%10001,%10001,%10001,%01110
+    ; $70 p
+    glyph %00000,%00000,%11110,%10001,%11110,%10000,%10000
+    ; $71 q
+    glyph %00000,%00000,%01111,%10001,%01111,%00001,%00001
+    ; $72 r
+    glyph %00000,%00000,%10110,%11001,%10000,%10000,%10000
+    ; $73 s
+    glyph %00000,%00000,%01111,%10000,%01110,%00001,%11110
+    ; $74 t
+    glyph %01000,%01000,%11110,%01000,%01000,%01001,%00110
+    ; $75 u
+    glyph %00000,%00000,%10001,%10001,%10001,%10011,%01101
+    ; $76 v
+    glyph %00000,%00000,%10001,%10001,%10001,%01010,%00100
+    ; $77 w
+    glyph %00000,%00000,%10001,%10001,%10101,%10101,%01010
+    ; $78 x
+    glyph %00000,%00000,%10001,%01010,%00100,%01010,%10001
+    ; $79 y
+    glyph %00000,%00000,%10001,%10001,%01111,%00001,%01110
+    ; $7A z
+    glyph %00000,%00000,%11111,%00010,%00100,%01000,%11111
+    ; $7B {
+    glyph %00110,%00100,%00100,%01000,%00100,%00100,%00110
+    ; $7C |
+    glyph %00100,%00100,%00100,%00100,%00100,%00100,%00100
+    ; $7D }
+    glyph %01100,%00100,%00100,%00010,%00100,%00100,%01100
+    ; $7E ~
+    glyph %00000,%01000,%10101,%00010,%00000,%00000,%00000
+    ; $7F is not a character. It is drawn as an empty box so that a byte that
+    ; should never reach the screen is unmistakable when one does.
+    glyph %11111,%10001,%10001,%10001,%10001,%10001,%11111
 FontDataEnd::
 
 DEF FONT_GLYPHS EQU (FontDataEnd - FontData) / FONT_ROWS
@@ -172,12 +249,20 @@ SECTION "FontCode", ROM0
 ; colour index 3 on index 0: black on white under the palette set below.
 ; ---------------------------------------------------------------------------
 LoadFont::
-    ; blank the whole of tile block 0 first, so an unprintable byte in the
+    ; Blank the whole of tile block 0 first, so an unprintable byte in the
     ; tilemap shows as an empty cell rather than as leftover VRAM.
+    ;
+    ; The zero is reloaded every time round. Hoisting it out of the loop is the
+    ; obvious saving and it is wrong: `ld a, b` is the loop's own counter test,
+    ; so from the second pass onwards this wrote the high byte of the counter
+    ; into video RAM instead. It filled every tile's unwritten eighth row with
+    ; ink, which drew a hairline through every row of the report on screen --
+    ; and nothing at all in the serial log, which is why it went unnoticed
+    ; until somebody looked at the screen.
     ld hl, _VRAM
     ld bc, $1000
-    xor a
 .blank
+    xor a
     ld [hl+], a
     dec bc
     ld a, b

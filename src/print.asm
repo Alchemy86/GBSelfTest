@@ -86,7 +86,7 @@ ScreenChar:
     jr z, .newline
     cp ' '
     jr c, .bad
-    cp $60
+    cp $80                  ; the font covers $20..$7F; see font.asm
     jr c, .ok
 .bad
     ld a, '?'
@@ -352,6 +352,31 @@ SerialWordHex::
     ret
 
 ; PrintDec3 — A in decimal, no leading zeros, 1..3 digits
+; PrintDec2 — A as exactly two digits, to whichever sinks are enabled. The
+; check codes are fixed width on purpose: `GB-PPU-08`, never `GB-PPU-8`, so
+; that a reader, a grep and a documentation anchor all spell them the same way.
+PrintDec2::
+    push af
+    push bc
+    ld c, 0
+.tens
+    cp 10
+    jr c, .ones
+    sub 10
+    inc c
+    jr .tens
+.ones
+    ld b, a
+    ld a, c
+    add '0'
+    call PrintChar
+    ld a, b
+    add '0'
+    call PrintChar
+    pop bc
+    pop af
+    ret
+
 PrintDec3::
     push af
     push bc

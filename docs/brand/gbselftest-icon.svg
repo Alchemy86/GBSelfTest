@@ -1,0 +1,7 @@
+<!-- GBSelfTest icon — the pass mark
+     Hand-authored for GBSelfTest (MIT). No font embedded, subset or traced;
+     letterforms are original stroked paths. Regenerate with docs/brand/generate.py -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img">
+<rect x="1" y="1" width="126" height="126" rx="28" fill="#0d1117" stroke="#30363d" stroke-width="2"/>
+<path transform="translate(15.0 13.0) scale(1.0200)" d="M13 48 L36 74 L83 26" fill="none" stroke="#9bbc0f" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
