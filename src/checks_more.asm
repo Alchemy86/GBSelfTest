@@ -358,3 +358,190 @@ ChkBootIf::
     jp FailNote
 .noteVb  db "the vertical blank flag was not set at hand-over. The boot ROM waits for the screen before it lets go, so IF reads $E1 when the cartridge starts",0
 .noteTop db "IF's three unimplemented bits did not read as ones at hand-over",0
+
+SECTION "MoreApu2", ROMX, BANK[3]
+
+; ---------------------------------------------------------------------------
+; GB-APU-06 — powering the chip off switches every channel off with it.
+; ---------------------------------------------------------------------------
+ChkApuPowerOff::
+    ld a, $80
+    ldh [rNR52], a
+    ld a, $F0
+    ldh [rNR12], a
+    ld a, $80
+    ldh [rNR14], a          ; channel 1 playing
+    ldh a, [rNR52]
+    and $01
+    jr z, .notOn
+    xor a
+    ldh [rNR52], a          ; power off
+    ldh a, [rNR52]
+    ld b, a
+    ld a, $80
+    ldh [rNR52], a          ; and back on, so the rest of the run has a chip
+    ld a, b
+    and $01
+    jr nz, .stillOn
+    or a
+    ret
+.notOn
+    ld hl, .noteOn
+    jp FailNote
+.stillOn
+    ld b, $70
+    ld a, b
+    call SetNums8
+    ld hl, .noteOff
+    jp FailNote
+.noteOn  db "a channel with its converter on and freshly triggered did not report itself playing, so this check could not ask the question",0
+.noteOff db "a channel was still reported as playing after the sound chip was switched off. Clearing bit 7 of NR52 stops everything: the status bits go with it",0
+
+; ---------------------------------------------------------------------------
+; GB-APU-07 — wave memory survives the chip being switched off.
+;
+; Everything else the chip holds is cleared by a power cycle. The sixteen bytes
+; of wave memory are not: they are a separate little RAM and they keep their
+; contents, which is why a driver can load a waveform before it powers the chip
+; up. An emulator that clears them along with the registers loses the waveform.
+; ---------------------------------------------------------------------------
+ChkApuWaveRetained::
+    ld a, $80
+    ldh [rNR52], a
+    xor a
+    ldh [rNR30], a
+    ld c, LOW(_AUD3WAVERAM)
+    ld b, 16
+    ld d, $5A
+.write
+    ld a, d
+    ldh [c], a
+    inc c
+    dec b
+    jr nz, .write
+    xor a
+    ldh [rNR52], a          ; power off
+    ld a, $80
+    ldh [rNR52], a          ; and on again
+    xor a
+    ldh [rNR30], a
+    ld c, LOW(_AUD3WAVERAM)
+    ld b, 16
+.read
+    ldh a, [c]
+    cp $5A
+    jr nz, .lost
+    inc c
+    dec b
+    jr nz, .read
+    or a
+    ret
+.lost
+    ld b, $5A
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.note db "wave memory was cleared by a power cycle of the sound chip. The registers are cleared; these sixteen bytes are not, and a driver that loads a waveform before powering up depends on that",0
+
+SECTION "MoreMbc2", ROM0
+
+; ---------------------------------------------------------------------------
+; GB-MBC-05 — the cartridge RAM enable looks at the low nibble only.
+;
+; Any value whose low four bits are $A enables it; anything else disables it.
+; The mapper decodes four bits and no more, so $1A and $FA enable exactly as
+; $0A does, and $0B does not. Games write all sorts of things there.
+; ---------------------------------------------------------------------------
+ChkMbcRamEnableNibble::
+    ld a, $0A
+    ld [$0000], a
+    ld a, $C3
+    ld [_SRAM], a           ; a known byte to watch
+    ld a, [_SRAM]
+    cp $C3
+    jr nz, .noRam
+
+    ld a, $1A               ; still a low nibble of $A, so still enabled
+    ld [$0000], a
+    ld a, [_SRAM]
+    cp $C3
+    jr nz, .highBitsMattered
+
+    ld a, $0B               ; not $A, so disabled
+    ld [$0000], a
+    ld a, $77
+    ld [_SRAM], a           ; must be discarded
+    ld a, $0A
+    ld [$0000], a
+    ld a, [_SRAM]
+    ld c, a
+    xor a
+    ld [$0000], a
+    ld a, c
+    cp $C3
+    jr nz, .leaked
+    or a
+    ret
+.noRam
+    ld b, $C3
+    call SetNums8
+    xor a
+    ld [$0000], a
+    ld hl, .noteRam
+    jp FailNote
+.highBitsMattered
+    ld b, $C3
+    call SetNums8
+    xor a
+    ld [$0000], a
+    ld hl, .noteHigh
+    jp FailNote
+.leaked
+    ld b, $C3
+    ld a, c
+    call SetNums8
+    xor a
+    ld [$0000], a
+    ld hl, .noteLeak
+    jp FailNote
+.noteRam  db "cartridge RAM did not hold a byte written to it while enabled",0
+.noteHigh db "writing $1A disabled the cartridge RAM. Only the low four bits are decoded, so any value ending in $A enables it",0
+.noteLeak db "a write landed in cartridge RAM after $0B was written to the enable. Anything whose low nibble is not $A locks it",0
+
+SECTION "MoreInt2", ROMX, BANK[2]
+
+; ---------------------------------------------------------------------------
+; GB-INT-10 — a pending interrupt can be taken back before it is serviced.
+;
+; IF is writable, and clearing a bit before the master enable arrives cancels
+; that interrupt outright. It is how a program disarms something it has already
+; asked for, and it is the reason IF is a register rather than a set of edges.
+; ---------------------------------------------------------------------------
+ChkIfCancel::
+    call InstallReti
+    di
+    ld a, IEF_TIMER
+    ldh [rIE], a
+    xor a
+    ld [X_TMP], a
+    ld a, IEF_TIMER
+    ldh [rIF], a            ; ask for it ...
+    xor a
+    ldh [rIF], a            ; ... and take the request back
+    ei
+    nop
+    nop
+    di
+    ld a, [X_TMP]
+    or a
+    jr nz, .servicedAnyway
+    call ClearReti
+    or a
+    ret
+.servicedAnyway
+    ld b, 0
+    call SetNums8
+    call ClearReti
+    ld hl, .note
+    jp FailNote
+.note db "an interrupt was serviced after its flag had been cleared again. IF is a register a program can write, and clearing a bit before the interrupt is taken cancels it",0

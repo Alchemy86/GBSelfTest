@@ -1155,3 +1155,166 @@ StatCountIsr:
     pop af
     pop hl
     reti
+
+; ---------------------------------------------------------------------------
+; GB-PPU-16 — writing STAT on a Game Boy raises a spurious interrupt.
+;
+; A defect in the original silicon: a write to STAT while the screen is on
+; behaves for one cycle as though every condition had been selected, so if any
+; of them is true at that moment the interrupt is raised -- even when the value
+; written selects nothing at all.
+;
+; It is not a curiosity. Road Rash and Legend of Zelda: Oracle of Ages are the
+; games usually named for depending on it, and an emulator without it runs them
+; differently. It was fixed on the Color console, so this is asked only of a
+; machine that should have it.
+;
+; Source: Pan Docs, "Spurious STAT interrupts"; the Mooneye suite tests it.
+; ---------------------------------------------------------------------------
+ChkStatWriteBug::
+    ld a, [wConsole]
+    cp CONSOLE_CGB
+    jr z, .colour
+    cp CONSOLE_AGB
+    jr z, .colour
+    call SceneBase
+    di
+    xor a
+    ldh [rSTAT], a          ; nothing selected, so nothing should fire
+    ld a, 200
+    ldh [rLYC], a           ; a line LY never reaches, so it is not that
+.toVBlank
+    ldh a, [rLY]
+    cp 145
+    jr nz, .toVBlank
+    xor a
+    ldh [rIF], a
+    ldh [rSTAT], a          ; write zero: still acts as though $FF for a cycle
+    ldh a, [rIF]
+    ld b, a
+    xor a
+    ldh [rIF], a
+    ldh [rLYC], a
+    ld a, b
+    and IEF_STAT
+    ret nz
+    ld b, IEF_STAT
+    ld a, b
+    xor a
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.colour
+    ld hl, .noteSkip
+    jp SkipWith
+.note     db "writing STAT with no condition selected did not raise the interrupt. On this machine the write acts for one cycle as though every condition were selected, and games depend on it",0
+.noteSkip db "not run: this defect is in the original silicon only and was fixed on the Color console",0
+
+; ---------------------------------------------------------------------------
+; GB-PPU-17 — a window past the right-hand edge costs nothing.
+;
+; The window only ever costs the fetcher time if it actually starts on the
+; line. Enabled but placed beyond the last pixel, it never takes over, and mode
+; 3 is as short as with the window switched off. An implementation that charges
+; for the enable bit rather than for the takeover pays for a window nobody can
+; see.
+; ---------------------------------------------------------------------------
+ChkWindowOffScreen::
+    call StatWorks
+    ld a, [wStatWorks]
+    or a
+    jr z, .noStat
+    call SceneBase
+    call ArmSled
+    call MeasureE3
+    ld [P_E3], a
+    call DisarmSled
+    call LcdOff
+    xor a
+    ldh [rWY], a
+    ld a, 167               ; one past the rightmost position that can appear
+    ldh [rWX], a
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON | LCDCF_WINON
+    ldh [rLCDC], a
+    call ArmSled
+    call MeasureE3
+    ld [P_SCENE], a
+    call DisarmSled
+    call SceneBase
+    ld a, [P_E3]
+    ld b, a
+    ld a, [P_SCENE]
+    cp b
+    jr nz, .costly
+    or a
+    ret
+.costly
+    ld a, [P_E3]
+    ld b, a
+    ld a, [P_SCENE]
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.noStat
+    ld hl, .noteSkip
+    jp SkipWith
+.note     db "the window was enabled beyond the right-hand edge and still lengthened mode 3. The cost is the takeover, not the enable bit, and a window at WX 167 never takes over",0
+.noteSkip db "not run: the coincidence interrupt never fired",0
+
+; ---------------------------------------------------------------------------
+; GB-PPU-18 — an object at x = 0 draws nothing and costs the same anyway.
+;
+; An object is placed by the coordinate of its right-hand edge minus eight, so
+; one at zero is entirely off the left of the screen. The scan still finds it,
+; the fetcher still fetches its row, and mode 3 still grows. Skipping the work
+; because nothing will be visible is a plausible optimisation and it is wrong;
+; the Mooneye suite's object-timing table begins with exactly these rows.
+; ---------------------------------------------------------------------------
+ChkObjOffLeft::
+    call StatWorks
+    ld a, [wStatWorks]
+    or a
+    jr z, .noStat
+    call SceneBase
+    call ArmSled
+    call MeasureE3
+    ld [P_E3], a
+    call DisarmSled
+    call LcdOff
+    call ClearObjects
+    ld hl, _OAMRAM
+    ld b, 10
+.place
+    ld a, MEASURE_LINE + 16
+    ld [hl+], a
+    xor a
+    ld [hl+], a             ; x = 0: entirely off the left edge
+    ld [hl+], a
+    ld [hl+], a
+    dec b
+    jr nz, .place
+    call ObjectsOn
+    call ArmSled
+    call MeasureE3
+    ld [P_SCENE], a
+    call DisarmSled
+    call SceneBase
+    ld a, [P_E3]
+    ld c, a
+    ld a, [P_SCENE]
+    sub c
+    jr c, .free
+    cp 12                   ; ten objects at six cycles each is fifteen; this
+    jr c, .free             ; only asks that most of it was charged
+    or a
+    ret
+.free
+    ld b, 12
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.noStat
+    ld hl, .noteSkip
+    jp SkipWith
+.note     db "ten objects placed entirely off the left of the screen cost the fetcher nothing. They are still found by the scan and their rows are still fetched; only the drawing is thrown away",0
+.noteSkip db "not run: the coincidence interrupt never fired",0

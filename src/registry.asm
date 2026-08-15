@@ -114,6 +114,7 @@ ListCyc:
     check ChkCycStack, 3, NmCycStack, ExCyc
     check ChkCycJump,  4, NmCycJump,  ExCyc
     check ChkCycCb,    5, NmCycCb,    ExCyc
+    check ChkCycMore,  6, NmCycMore,  ExCyc
     dw 0
 
 NmCycLoad:  db "loads and memory accesses",0
@@ -121,6 +122,7 @@ NmCycAlu:   db "arithmetic and sixteen-bit operations",0
 NmCycStack: db "PUSH, POP, CALL and RET",0
 NmCycJump:  db "jumps taken and not taken",0
 NmCycCb:    db "CB-prefixed operations",0
+NmCycMore:  db "restarts, returns and the register-addressed load",0
 ExCyc:      db "an instruction took a different number of machine cycles from the published opcode table",0
 
 ; ---------------------------------------------------------------------------
@@ -165,6 +167,7 @@ ListInt:
     check ChkDispatch,  7, NmDispatch,  ExDispatch
     check ChkIeBits,    8, NmIeBits,    ExIeBits
     check ChkReti,      9, NmReti,      ExReti
+    check ChkIfCancel, 10, NmIfCancel,  ExIfCancel
     dw 0
 
 NmIfBits:   db "IF's top three bits read as one",0
@@ -183,6 +186,8 @@ NmIeBits:   db "IE stores all eight bits, IF does not",0
 ExIeBits:   db "the enable register is real storage throughout; the flag register's top three bits are not implemented",0
 NmReti:     db "RETI restores the master enable",0
 ExReti:     db "returning from a handler with RETI re-enables interrupts with none of EI's delay",0
+NmIfCancel: db "clearing IF cancels a pending interrupt",0
+ExIfCancel: db "IF is a register a program can write, and clearing a bit before the interrupt is taken takes the request back",0
 NmDispatch: db "dispatch costs five machine cycles",0
 ExDispatch: db "taking an interrupt is two idle cycles, two pushes and a vector fetch",0
 
@@ -231,6 +236,9 @@ ListPpu:
     check ChkObjDisabled,13,NmObjDis,   ExObjDis
     check ChkLcdOff,   14, NmLcdOff,    ExLcdOff
     check ChkStatBlocking,15,NmStatBlk, ExStatBlk
+    check ChkStatWriteBug,16,NmStatBug, ExStatBug
+    check ChkWindowOffScreen,17,NmWinOff,ExWinOff
+    check ChkObjOffLeft,18, NmObjLeft,  ExObjLeft
     dw 0
 
 NmFrameLen:  db "a frame is 70224 cycles, measured against DIV",0
@@ -259,6 +267,12 @@ NmLcdOff:   db "the LCD off means LY 0 and mode 0",0
 ExLcdOff:   db "switching the screen off stops the timing chain and resets the line counter",0
 NmStatBlk:  db "the STAT interrupt is one line, not four",0
 ExStatBlk:  db "the selected conditions are ORed together and only the rising edge of the result raises anything",0
+NmStatBug:  db "writing STAT raises a spurious interrupt",0
+ExStatBug:  db "on the original silicon the write acts for one cycle as though every condition were selected, and games depend on it",0
+NmWinOff:   db "a window past the right edge costs nothing",0
+ExWinOff:   db "the cost is the takeover, not the enable bit",0
+NmObjLeft:  db "an object off the left edge still costs",0
+ExObjLeft:  db "the scan finds it and its row is fetched; only the drawing is thrown away",0
 NmVramBlock: db "VRAM is unreadable during mode 3",0
 ExVramBlock: db "the CPU must read $FF from VRAM while the fetcher owns it",0
 NmOamBlock:  db "OAM is unreadable during modes 2 and 3",0
@@ -293,6 +307,8 @@ ListApu:
     check ChkApuStatus, 3, NmApuStatus, ExApuStatus
     check ChkApuWave,   4, NmApuWave,   ExApuWave
     check ChkApuDac,    5, NmApuDac,    ExApuDac
+    check ChkApuPowerOff,6,NmApuOff,    ExApuOff
+    check ChkApuWaveRetained,7,NmApuKeep,ExApuKeep
     dw 0
 
 NmApuMasks:  db "every register reads back its documented bits",0
@@ -303,6 +319,10 @@ NmApuStatus: db "NR52 reports which channels are on",0
 ExApuStatus: db "a triggered channel must show in NR52, and a channel whose length runs out must stop showing",0
 NmApuDac:    db "a channel with its converter off stays off",0
 ExApuDac:    db "the top five bits of NRx2 drive the converter, and a channel without one cannot be triggered on",0
+NmApuOff:    db "powering off switches every channel off",0
+ExApuOff:    db "clearing bit 7 of NR52 stops everything, and the status bits go with it",0
+NmApuKeep:   db "wave memory survives a power cycle",0
+ExApuKeep:   db "the registers are cleared by a power cycle; the sixteen bytes of wave memory are not",0
 NmApuWave:   db "wave RAM is readable while the channel is off",0
 ExApuWave:   db "the sixteen bytes at $FF30 are ordinary memory when channel 3 is not playing",0
 
@@ -316,6 +336,7 @@ ListMbc:
     check ChkMbcZero,  2, NmMbcZero,  ExMbcZero
     check ChkMbcRam,   3, NmMbcRam,   ExMbcRam
     check ChkMbcMask,  4, NmMbcMask,  ExMbcMask
+    check ChkMbcRamEnableNibble,5,NmMbcNib,ExMbcNib
     dw 0
 
 NmMbcBanks: db "each ROM bank reads back its own number",0
@@ -324,6 +345,8 @@ NmMbcZero:  db "bank 0 is translated to bank 1",0
 ExMbcZero:  db "writing a bank number of zero to an MBC1 selects bank 1; the mapper cannot map bank 0 twice",0
 NmMbcMask:  db "a bank number past the end wraps",0
 ExMbcMask:  db "only as many of the register's five bits are connected as the cartridge has banks",0
+NmMbcNib:   db "the RAM enable decodes four bits only",0
+ExMbcNib:   db "any value whose low nibble is $A enables cartridge RAM; anything else locks it",0
 NmMbcRam:   db "cartridge RAM only answers when enabled",0
 ExMbcRam:   db "a write to cartridge RAM must be discarded unless $0A was written to $0000",0
 

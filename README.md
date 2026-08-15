@@ -73,25 +73,25 @@ this repository were wrong and were found that way, not by reasoning.
 
 | implementation | result |
 |---|---:|
-| SameBoy (DMG, MGB) | 76 / 76 |
-| SameBoy (CGB-E, AGB) | 74 / 76, 2 skipped |
-| TerminalGB, per-dot renderer | 76 / 76 |
-| TerminalGB, whole-scanline renderer | 71 / 76 |
-| Peanut-GB | 58 / 76 |
+| SameBoy (DMG, MGB) | 84 / 84 |
+| SameBoy (CGB-E, AGB) | 81 / 84, 3 skipped |
+| TerminalGB, per-dot renderer | 83 / 84 |
+| TerminalGB, whole-scanline renderer | 77 / 84 |
+| Peanut-GB | 62 / 84 |
 
 That spread is the property this cartridge exists to have. A suite everybody
 passes measures nothing.
 
 ## How long it takes
 
-About **eight seconds** on a Game Boy, measured end to end, and the checks are
-not what costs it: the run waits on the display for 77 frames (1.3 s) and
+Under **ten seconds** on a Game Boy, measured end to end, and the checks are
+not what costs it: the run waits on the display for 118 frames (2.0 s) and
 spends the rest shifting the report out of the link port, which on a Game Boy
-runs at 8192 bits per second. The report prints its own cost on the last line
-but one:
+runs at 8192 bits per second. The report prints its own cost on the
+last line but one:
 
 ```
-cost 77 frames, sent 6678 B
+cost 118 frames, sent 6760 B
 ```
 
 A host that only wants the verdict can stop as soon as it sees `Passed` or
@@ -101,7 +101,7 @@ the product.
 
 ## What it checks
 
-Eleven areas, 76 checks. The full list with explanations is
+Eleven areas, 84 checks. The full list with explanations is
 [`docs/CHECKS.md`](docs/CHECKS.md).
 
 | area | what it is about |

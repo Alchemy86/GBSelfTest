@@ -801,3 +801,11 @@ ScreenFailures:
     ld [wSinks], a
     ret
 .hdr db "failed:",0
+
+; ---------------------------------------------------------------------------
+; The restart vector the timing check calls. It is only here so that `RST $38`
+; has somewhere to go and come back from, which is what lets its cost be
+; measured against the published four machine cycles.
+; ---------------------------------------------------------------------------
+SECTION "Rst38", ROM0[$0038]
+    ret

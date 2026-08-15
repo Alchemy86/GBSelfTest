@@ -156,7 +156,7 @@ CheckTimingTable:
 ; ---------------------------------------------------------------------------
 MACRO tprologue
     ld hl, wScratch
-    ld bc, $0102
+    ld bc, $0180            ; C addresses high RAM, so `ldh a,[c]` is harmless
     ld de, $0304
 ENDM
 
@@ -311,6 +311,47 @@ BodySwap:
     ENDR
     ret
 
+BodyLdhC:
+    tprologue
+    REPT REPS
+    ldh a, [c]
+    ENDR
+    ret
+
+BodyLdNnSp:
+    tprologue
+    REPT REPS
+    ld [wScratch + 60], sp
+    ENDR
+    ret
+
+BodyRst:
+    tprologue
+    REPT REPS
+    rst $38
+    ENDR
+    ret
+
+BodyRetTaken:
+    tprologue
+    xor a                   ; Z set; nothing in the loop disturbs it
+    REPT REPS
+    call TimedRetZ
+    ENDR
+    ret
+TimedRetZ:
+    ret z
+    ret
+
+BodyRetNotTaken:
+    tprologue
+    ld a, 1
+    or a                    ; Z clear
+    REPT REPS
+    call TimedRetZ
+    ENDR
+    ret
+
 ; ---------------------------------------------------------------------------
 ChkCycLoad::
     ld hl, .table
@@ -369,6 +410,22 @@ ChkCycJump::
 .nJrT db "a taken JR is three machine cycles: the extra one is loading the new program counter",0
 .nJrN db "a conditional jump that is NOT taken still fetches its operand, so it costs two -- an emulator that charges nothing for it runs conditionals too fast",0
 .nJp  db "JP nn is four whether or not it is conditional and taken",0
+
+ChkCycMore::
+    ld hl, .table
+    jp CheckTimingTable
+.table
+    timing BodyLdhC, 2, .nLdhC
+    timing BodyLdNnSp, 5, .nLdNnSp
+    timing BodyRst, 8, .nRst
+    timing BodyRetTaken, 11, .nRetT
+    timing BodyRetNotTaken, 12, .nRetN
+    dw 0
+.nLdhC   db "LDH A,[C] is two machine cycles: the address is a register, so there is no offset byte to fetch",0
+.nLdNnSp db "LD [nn],SP is five: opcode, two address bytes, then TWO writes",0
+.nRst    db "a restart and its return are eight together: RST is four, and it pushes without fetching an address",0
+.nRetT   db "a call and a TAKEN conditional return are eleven together. The condition costs a cycle whether or not it is met",0
+.nRetN   db "a call, a conditional return NOT taken and a plain return are twelve together: a conditional return that falls through still costs two",0
 
 ChkCycCb::
     ld hl, .table
