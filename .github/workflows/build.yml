@@ -1,0 +1,57 @@
+# Build the cartridge, prove the build is reproducible, and run it on an
+# emulator nobody here wrote.
+#
+# The last of those is the one that matters. A test cartridge validated only
+# against the emulator its author uses would have that emulator's behaviour
+# baked into its expected values, which is exactly the failure this project
+# exists to avoid.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cartridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install RGBDS build dependencies
+        run: sudo apt-get update && sudo apt-get install -y bison libpng-dev
+
+      - name: fetch and build the pinned RGBDS
+        run: tools/fetch-rgbds.sh
+
+      - name: build
+        run: make RGBDS=$PWD/.rgbds
+
+      - name: the build is reproducible
+        run: make RGBDS=$PWD/.rgbds check
+
+      - name: the committed ROM is the one this source builds
+        run: |
+          git diff --exit-code -- dist/gbselftest.gb ||
+            { echo "dist/gbselftest.gb is not what src/ builds; rebuild and commit it"; exit 1; }
+
+      - name: the check reference matches the registry
+        run: tools/gen-docs.py --check
+
+      - name: run it on SameBoy, which nobody here wrote
+        run: |
+          tools/run-sameboy.sh dmg 20000 | tee /tmp/report.txt
+          tail -1 /tmp/report.txt | tr -d '\r' | grep -qx Passed ||
+            { echo "the cartridge does not pass on SameBoy; see the report above"; exit 1; }
+
+      - name: it says the same thing on a Pocket
+        run: |
+          tools/run-sameboy.sh mgb 20000 > /tmp/mgb.txt
+          tail -1 /tmp/mgb.txt | tr -d '\r' | grep -qx Passed
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gbselftest
+          path: |
+            dist/gbselftest.gb
+            docs/CHECKS.md

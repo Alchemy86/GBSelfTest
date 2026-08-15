@@ -1,0 +1,8 @@
+*.o
+*.map
+*.sym
+build/
+/rgbds/
+/.sameboy/
+/.rgbds/
+/.rgbds-src/
