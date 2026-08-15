@@ -1318,3 +1318,51 @@ ChkObjOffLeft::
     jp SkipWith
 .note     db "ten objects placed entirely off the left of the screen cost the fetcher nothing. They are still found by the scan and their rows are still fetched; only the drawing is thrown away",0
 .noteSkip db "not run: the coincidence interrupt never fired",0
+
+; ---------------------------------------------------------------------------
+; GB-PPU-19 — vertical scrolling costs the fetcher nothing.
+;
+; The negative control for GB-PPU-07. SCX delays the first pixel because the
+; leftmost tile has to be fetched and part of it thrown away; SCY only chooses
+; which ROW of the tile is fetched, and a row costs what a row costs. An
+; implementation that charges for "the background is scrolled" rather than for
+; the pixels actually discarded fails this while passing GB-PPU-07, which is
+; exactly the confusion worth catching.
+; ---------------------------------------------------------------------------
+ChkMode3Scy::
+    call StatWorks
+    ld a, [wStatWorks]
+    or a
+    jr z, .noStat
+    call SceneBase
+    call ArmSled
+    call MeasureE3
+    ld [P_E3], a
+    call DisarmSled
+    call SceneBase
+    ld a, 5                 ; any offset that is not a whole tile
+    ldh [rSCY], a
+    call ArmSled
+    call MeasureE3
+    ld [P_SCENE], a
+    call DisarmSled
+    call SceneBase
+    ld a, [P_E3]
+    ld b, a
+    ld a, [P_SCENE]
+    cp b
+    jr nz, .costly
+    or a
+    ret
+.costly
+    ld a, [P_E3]
+    ld b, a
+    ld a, [P_SCENE]
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.noStat
+    ld hl, .noteSkip
+    jp SkipWith
+.note     db "an SCY that is not a multiple of eight lengthened mode 3. Only SCX can: it discards pixels the fetcher has already fetched, whereas SCY only picks which row of the tile is read, and every row costs the same",0
+.noteSkip db "not run: the coincidence interrupt never fired",0

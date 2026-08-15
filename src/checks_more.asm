@@ -545,3 +545,118 @@ ChkIfCancel::
     ld hl, .note
     jp FailNote
 .note db "an interrupt was serviced after its flag had been cleared again. IF is a register a program can write, and clearing a bit before the interrupt is taken cancels it",0
+
+SECTION "MoreTimer2", ROMX, BANK[2]
+
+; ---------------------------------------------------------------------------
+; GB-TIM-07 — switching the timer OFF can make it tick one last time.
+;
+; The same mechanism as GB-TIM-06 seen from the other side. What TIMA counts is
+; the falling edge of (the watched bit AND the enable), so clearing the enable
+; while the watched bit is set drops that expression from one to zero, and the
+; timer increments on its way out. An implementation that models the timer as
+; its own countdown, started and stopped by the enable, cannot produce it.
+;
+; Source: Pan Docs, "Timer Obscure Behaviour".
+; ---------------------------------------------------------------------------
+ChkTacDisableGlitch::
+    di
+    ld a, TACF_START | TACF_1024T   ; watches bit 9, which is bit 1 of DIV
+    ldh [rTAC], a
+    xor a
+    ldh [rTMA], a
+
+    ; the control: disable while the watched bit is CLEAR
+    ldh [rDIV], a
+.waitClear
+    ldh a, [rDIV]
+    and $02
+    jr nz, .waitClear
+    xor a
+    ldh [rTIMA], a
+    ldh [rTAC], a                   ; enable off
+    ldh a, [rTIMA]
+    or a
+    jr nz, .tickedWhenClear
+
+    ; and the case that matters: disable while it is SET
+    ld a, TACF_START | TACF_1024T
+    ldh [rTAC], a
+    xor a
+    ldh [rDIV], a
+.waitSet
+    ldh a, [rDIV]
+    and $02
+    jr z, .waitSet
+    xor a
+    ldh [rTIMA], a
+    ldh [rTAC], a                   ; enable off, with the watched bit high
+    ldh a, [rTIMA]
+    ld b, a
+    xor a
+    ldh [rTAC], a
+    ld a, b
+    or a
+    ret nz
+    ld b, 1
+    call SetNums8
+    ld hl, .noteMissing
+    jp FailNote
+.tickedWhenClear
+    ld b, 0
+    call SetNums8
+    xor a
+    ldh [rTAC], a
+    ld hl, .noteSpurious
+    jp FailNote
+.noteMissing  db "clearing the enable bit while the timer's watched bit was set did not increment TIMA. What is counted is the falling edge of the watched bit ANDed with the enable, so switching the enable off is itself a falling edge",0
+.noteSpurious db "TIMA incremented when the enable was cleared while the watched bit was already clear",0
+
+SECTION "MoreInt3", ROMX, BANK[2]
+
+; ---------------------------------------------------------------------------
+; GB-INT-11 — an interrupt that is no longer enabled is not taken.
+;
+; IE is consulted at the moment of dispatch, not when the flag went up. A
+; program that raises a flag and then clears the matching enable before the
+; master enable arrives gets no interrupt at all, and the flag stays standing.
+; ---------------------------------------------------------------------------
+ChkIeCancel::
+    call InstallReti
+    di
+    ld a, IEF_TIMER
+    ldh [rIE], a
+    xor a
+    ld [X_TMP], a
+    ld a, IEF_TIMER
+    ldh [rIF], a            ; the flag is up ...
+    xor a
+    ldh [rIE], a            ; ... and now nothing is enabled
+    ei
+    nop
+    nop
+    di
+    ld a, [X_TMP]
+    or a
+    jr nz, .servicedAnyway
+    ldh a, [rIF]
+    and IEF_TIMER
+    jr z, .flagLost
+    call ClearReti
+    or a
+    ret
+.servicedAnyway
+    ld b, 0
+    call SetNums8
+    call ClearReti
+    ld hl, .noteTaken
+    jp FailNote
+.flagLost
+    ld b, IEF_TIMER
+    ld a, 0
+    call SetNums8
+    call ClearReti
+    ld hl, .noteLost
+    jp FailNote
+.noteTaken db "an interrupt was serviced whose enable bit had been cleared. IE is consulted at the moment of dispatch, not when the flag went up",0
+.noteLost  db "the flag was cleared even though the interrupt was never serviced. Only dispatch clears a flag; disabling an interrupt leaves its request standing for later",0

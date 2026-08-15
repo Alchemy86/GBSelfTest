@@ -73,11 +73,11 @@ this repository were wrong and were found that way, not by reasoning.
 
 | implementation | result |
 |---|---:|
-| SameBoy (DMG, MGB) | 84 / 84 |
-| SameBoy (CGB-E, AGB) | 81 / 84, 3 skipped |
-| TerminalGB, per-dot renderer | 83 / 84 |
-| TerminalGB, whole-scanline renderer | 77 / 84 |
-| Peanut-GB | 62 / 84 |
+| SameBoy (DMG, MGB) | 87 / 87 |
+| SameBoy (CGB-E, AGB) | 84 / 87, 3 skipped |
+| TerminalGB, per-dot renderer | 86 / 87 |
+| TerminalGB, whole-scanline renderer | 80 / 87 |
+| Peanut-GB | 64 / 87 |
 
 That spread is the property this cartridge exists to have. A suite everybody
 passes measures nothing.
@@ -101,7 +101,7 @@ the product.
 
 ## What it checks
 
-Eleven areas, 84 checks. The full list with explanations is
+Eleven areas, 87 checks. The full list with explanations is
 [`docs/CHECKS.md`](docs/CHECKS.md).
 
 | area | what it is about |

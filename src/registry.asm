@@ -137,6 +137,7 @@ ListTim:
     check ChkTimaStop,  4, NmTimaStop,  ExTimaStop
     check ChkTimaWrap,  5, NmTimaWrap,  ExTimaWrap
     check ChkDivGlitch, 6, NmDivGlitch, ExDivGlitch
+    check ChkTacDisableGlitch,7,NmTacGlitch,ExTacGlitch
     dw 0
 
 NmDivRate:   db "the divider and the timer share one counter",0
@@ -149,6 +150,8 @@ NmTimaStop:  db "TAC bit 2 stops the timer",0
 ExTimaStop:  db "TIMA moved while the timer was switched off",0
 NmDivGlitch: db "writing DIV can itself clock the timer",0
 ExDivGlitch: db "the timer watches a bit of the divider's counter and a write that clears that bit is a falling edge",0
+NmTacGlitch: db "switching the timer off can clock it once more",0
+ExTacGlitch: db "what is counted is the watched bit ANDed with the enable, so clearing the enable is itself a falling edge",0
 NmTimaWrap:  db "overflow reloads TMA and raises the interrupt",0
 ExTimaWrap:  db "TIMA wrapping must reload from TMA and set bit 2 of IF",0
 
@@ -168,6 +171,7 @@ ListInt:
     check ChkIeBits,    8, NmIeBits,    ExIeBits
     check ChkReti,      9, NmReti,      ExReti
     check ChkIfCancel, 10, NmIfCancel,  ExIfCancel
+    check ChkIeCancel, 11, NmIeCancel,  ExIeCancel
     dw 0
 
 NmIfBits:   db "IF's top three bits read as one",0
@@ -188,6 +192,8 @@ NmReti:     db "RETI restores the master enable",0
 ExReti:     db "returning from a handler with RETI re-enables interrupts with none of EI's delay",0
 NmIfCancel: db "clearing IF cancels a pending interrupt",0
 ExIfCancel: db "IF is a register a program can write, and clearing a bit before the interrupt is taken takes the request back",0
+NmIeCancel: db "clearing IE prevents dispatch and keeps the flag",0
+ExIeCancel: db "IE is consulted at the moment of dispatch, and only dispatch clears a flag",0
 NmDispatch: db "dispatch costs five machine cycles",0
 ExDispatch: db "taking an interrupt is two idle cycles, two pushes and a vector fetch",0
 
@@ -239,6 +245,7 @@ ListPpu:
     check ChkStatWriteBug,16,NmStatBug, ExStatBug
     check ChkWindowOffScreen,17,NmWinOff,ExWinOff
     check ChkObjOffLeft,18, NmObjLeft,  ExObjLeft
+    check ChkMode3Scy, 19, NmScyFree,   ExScyFree
     dw 0
 
 NmFrameLen:  db "a frame is 70224 cycles, measured against DIV",0
@@ -273,6 +280,8 @@ NmWinOff:   db "a window past the right edge costs nothing",0
 ExWinOff:   db "the cost is the takeover, not the enable bit",0
 NmObjLeft:  db "an object off the left edge still costs",0
 ExObjLeft:  db "the scan finds it and its row is fetched; only the drawing is thrown away",0
+NmScyFree:  db "vertical scrolling costs the fetcher nothing",0
+ExScyFree:  db "only SCX discards fetched pixels; SCY just picks which row of the tile is read",0
 NmVramBlock: db "VRAM is unreadable during mode 3",0
 ExVramBlock: db "the CPU must read $FF from VRAM while the fetcher owns it",0
 NmOamBlock:  db "OAM is unreadable during modes 2 and 3",0
