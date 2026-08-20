@@ -14,6 +14,8 @@ INCLUDE "hardware.inc"
 SECTION "ChecksMem", ROMX, BANK[2]
 
 DEF E_TMP EQU wScratch + 80
+; GB-MEM-06's two observed bytes.
+DEF P_TMP EQU wScratch + 96
 
 ; A check may only scribble on memory the cartridge is not using. Writing to a
 ; convenient round address is exactly how the first version of the echo check
@@ -354,3 +356,84 @@ ChkHlIncDec::
     ld hl, .note
     jp FailNote
 .note db "LD [HL+],A and its three relatives must move the pointer by one after the access, and in the direction the mnemonic says",0
+
+SECTION "ChecksMemExtra", ROMX, BANK[2]
+
+; ---------------------------------------------------------------------------
+; GB-MEM-06 — $FEA0-$FEFF is not a hole.
+;
+; The bytes above object memory are commonly emulated as open bus reading $FF.
+; That is right only while the picture processor owns object memory; with the
+; screen off the region answers, and *what* it answers is one of the clearest
+; differences between the consoles:
+;
+;   DMG, MGB, SGB      $00
+;   CGB revisions 0-D  a small RAM area masked with a revision-specific value
+;   CGB revision E,
+;   AGB, AGS, GBP      the high nibble of the low address byte, twice:
+;                      $FEA0 reads $AA, $FEF0 reads $FF
+;
+; So this is asserted where the answer is documented and *reported* where it is
+; not: a Color console cannot tell its own revision apart from inside, and a
+; cartridge that guessed would be inventing a fact. Reporting is the useful
+; thing a self-test can do that a wiki cannot — it says what the machine in
+; your hands actually did.
+; ---------------------------------------------------------------------------
+ChkProhibited::
+    call LcdOff
+    di
+    ld a, [$FEA0]
+    ld [P_TMP], a
+    ld a, [$FEF0]
+    ld [P_TMP + 1], a
+
+    ld a, [wConsole]
+    cp CONSOLE_CGB
+    jr z, .report
+    cp CONSOLE_UNK
+    jr z, .report
+    cp CONSOLE_AGB
+    jr z, .agb
+
+    ; DMG and MGB: both bytes must read zero
+    ld a, [P_TMP]
+    or a
+    jr nz, .badZero
+    ld a, [P_TMP + 1]
+    or a
+    jr nz, .badZero
+    ret
+
+.agb
+    ld a, [P_TMP]
+    cp $AA
+    jr nz, .badNibble
+    ld a, [P_TMP + 1]
+    cp $FF
+    jr nz, .badNibble
+    ret
+
+.badZero
+    ld b, $00
+    call SetNums8
+    ld hl, .noteZero
+    jp FailNote
+.badNibble
+    ld b, $AA
+    ld a, [P_TMP]
+    call SetNums8
+    ld hl, .noteNibble
+    jp FailNote
+.report
+    ld a, [P_TMP]           ; high byte is $FEA0, low is $FEF0
+    ld d, a
+    ld a, [P_TMP + 1]
+    ld e, a
+    ld hl, $AAFF            ; what a revision E or an Advance answers
+    call SetNums16
+    ld hl, .noteReport
+    jp SkipWith
+
+.noteZero   db "with the screen off, $FEA0 and $FEF0 must read $00 on this console. Reading $FF means the region is being treated as a hole, which is only right while object memory is blocked",0
+.noteNibble db "an Advance answers this region with the high nibble of the low address byte twice, so $FEA0 reads $AA and $FEF0 reads $FF",0
+.noteReport db "reported, not judged: a Color console cannot tell its own revision from inside, and revisions 0 to D answer differently from revision E. The pair shown is what this machine gave for $FEA0 and $FEF0; a revision E or an Advance gives $AA and $FF",0

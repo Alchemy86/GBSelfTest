@@ -21,6 +21,9 @@ SECTION "DmaHram", HRAM
 hDmaStart:: ds 16
 hDmaProbe:: ds 24
 hDmaSeen::  db
+hDmaBus::   ds 32
+hDmaSaw::   ds 3
+hDmaA12::   ds 24
 
 SECTION "DmaCode", ROMX, BANK[3]
 
@@ -50,6 +53,60 @@ DmaProbeSrc:
     ldh a, [hDmaSeen]
     ret
 DmaProbeEnd:
+
+; ---------------------------------------------------------------------------
+; The transfer and the processor share one set of wires.
+;
+; The transfer controller has no bus of its own: it drives the source address
+; onto whichever bus that address lives on and reads the byte back off it. So a
+; processor read of an address on that same bus, during the transfer, is
+; looking at the same wires — and gets the byte the transfer is moving, not the
+; byte it asked for.
+;
+; This reads ONE fixed cartridge address three times while a transfer sourced
+; from the cartridge is running. The byte at that address never changes; the
+; byte the transfer is moving changes every machine cycle. Three different
+; answers is the whole proof, and it needs no cycle counting at all.
+; ---------------------------------------------------------------------------
+DmaBusSrc:
+    ldh [rDMA], a
+    ld a, [DmaRamp]
+    ldh [hDmaSaw + 0], a
+    ld a, [DmaRamp]
+    ldh [hDmaSaw + 1], a
+    ld a, [DmaRamp]
+    ldh [hDmaSaw + 2], a
+    ld a, 45
+.wait
+    dec a
+    jr nz, .wait
+    ret
+DmaBusEnd:
+
+; The processor's own address lines are shared with the transfer too, not just
+; the data lines. See GB-DMA-05.
+DmaA12Src:
+    ldh [rDMA], a
+    ld a, $5A
+    ld [$C000], a
+    ld a, 45
+.wait
+    dec a
+    jr nz, .wait
+    ret
+DmaA12End:
+
+InstallDmaA12:
+    ld hl, DmaA12Src
+    ld de, hDmaA12
+    ld b, DmaA12End - DmaA12Src
+    jr InstallDma.copy
+
+InstallDmaBus:
+    ld hl, DmaBusSrc
+    ld de, hDmaBus
+    ld b, DmaBusEnd - DmaBusSrc
+    jr InstallDma.copy
 
 InstallDma:
     ld hl, DmaStartSrc
@@ -613,3 +670,97 @@ ChkSerXfer::
     jp FailNote
 .noteHang db "bit 7 of SC never cleared. With the internal clock selected the console shifts eight bits by itself and the transfer ends",0
 .noteIrq  db "the transfer ended without raising bit 3 of IF",0
+
+; ---------------------------------------------------------------------------
+; GB-DMA-04 — the transfer and the processor share the cartridge bus.
+; ---------------------------------------------------------------------------
+ChkDmaBus::
+    call LcdOff
+    call InstallDmaBus
+    di
+    ld a, HIGH(DmaRamp)
+    call hDmaBus
+
+    ldh a, [hDmaSaw + 0]
+    ld b, a
+    ldh a, [hDmaSaw + 1]
+    cp b
+    jr nz, .shared
+    ldh a, [hDmaSaw + 2]
+    cp b
+    jr nz, .shared
+
+    ; every read gave the same byte: tell the two ways that can happen apart
+    ld a, [DmaRamp]
+    cp b
+    jr z, .notShared
+    ld hl, .noteFixed
+    jp FailNote
+.notShared
+    ld hl, .noteOwn
+    jp FailNote
+.shared
+    or a
+    ret
+
+.noteOwn   db "three reads of one fixed cartridge address, taken while a transfer sourced from the cartridge was running, all returned that address's own byte. The transfer controller has no bus of its own: it drives the source address onto the cartridge bus, so a read on that bus during the transfer sees the byte the transfer is moving",0
+.noteFixed db "three reads during the transfer all returned the same byte, and it was not the one at the address asked for. The processor is being given one fixed value rather than the byte the transfer is moving at that machine cycle",0
+
+; A page of bytes that all differ, aligned so it can be a transfer source.
+; Bank 3 — the bank this area's checks already run from, so the read inside
+; the high-RAM routine reaches it. ROM0 has no room for an aligned page.
+SECTION "DmaRamp", ROMX, BANK[3], ALIGN[8]
+DmaRamp::
+    FOR i, 160
+    db (i * 7 + 1) & $FF
+    ENDR
+
+; ---------------------------------------------------------------------------
+; GB-DMA-05 — where a work-RAM write lands while a transfer runs. REPORTED.
+;
+; The data lines are shared (GB-DMA-04). The *address* lines appear to be
+; shared as well: on a Color console, while a transfer runs out of the
+; cartridge, a processor write to $C000-$DFFF seems to take address line 12
+; from the page the transfer is driving rather than from the processor. Write
+; to $C000 during a transfer sourced from page $70 and the byte turns up at
+; $D000.
+;
+; No published reference documents this, so this check does not judge it: it
+; performs the experiment and prints where the byte went. That is the thing a
+; cartridge can do that a wiki cannot, and it is why the emulator this check
+; ships alongside deliberately did not "fix" its behaviour to match a test.
+;
+; A Color console only, because work RAM there has a bus of its own. On a
+; monochrome console work RAM is on the same bus as the cartridge, so a write
+; during the transfer is an ordinary bus conflict and the question does not
+; arise.
+; ---------------------------------------------------------------------------
+ChkDmaA12::
+    ld a, [wConsole]
+    cp CONSOLE_CGB
+    jr z, .go
+    cp CONSOLE_AGB
+    jr z, .go
+    ld hl, .noteMono
+    jp SkipWith
+.go
+    call LcdOff
+    call InstallDmaA12
+    di
+    xor a
+    ld [$C000], a
+    ld [$D000], a
+    ld a, $70               ; a cartridge page with address line 12 set
+    call hDmaA12
+
+    ld a, [$C000]           ; high byte is $C000, low is $D000
+    ld d, a
+    ld a, [$D000]
+    ld e, a
+    ld hl, $5A00            ; what an unshared address bus would leave
+    call SetNums16
+    ld hl, .noteReport
+    jp SkipWith
+
+.noteMono   db "work RAM shares the cartridge bus on this console, so a write during the transfer is an ordinary bus conflict and there is no address question to ask",0
+.noteReport db "reported, not judged. $5A was written to $C000 while a transfer ran out of page $70. The pair shown is what $C000 and $D000 held afterwards; an unshared address bus leaves $5A and $00. If it reads $00 and $5A the write went to $D000, which means address line 12 came from the transfer and not from the processor",0

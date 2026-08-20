@@ -115,8 +115,11 @@ ListCyc:
     check ChkCycJump,  4, NmCycJump,  ExCyc
     check ChkCycCb,    5, NmCycCb,    ExCyc
     check ChkCycMore,  6, NmCycMore,  ExCyc
+    check ChkCycPhase, 7, NmCycPhase, ExCycPhase
     dw 0
 
+NmCycPhase: db "an access lands on its own cycle",0
+ExCycPhase: db "advancing the clocks once per instruction keeps every rate right and still fails this",0
 NmCycLoad:  db "loads and memory accesses",0
 NmCycAlu:   db "arithmetic and sixteen-bit operations",0
 NmCycStack: db "PUSH, POP, CALL and RET",0
@@ -208,8 +211,11 @@ ListMem:
     check ChkRomWrite, 3, NmRomWrite, ExRomWrite
     check ChkVramSize, 4, NmVramSize, ExVramSize
     check ChkOamSize,  5, NmOamSize,  ExOamSize
+    check ChkProhibited, 6, NmProhibited, ExProhibited
     dw 0
 
+NmProhibited: db "$FEA0-$FEFF answers, per console",0
+ExProhibited: db "the bytes above object memory are not open bus once the screen is off",0
 NmEchoRam:  db "work RAM appears again at $E000",0
 ExEchoRam:  db "the echo is the same memory seen through a second door, and games read through it",0
 NmHram:     db "high RAM is its own 127 bytes",0
@@ -296,8 +302,14 @@ ListDma:
     check ChkDmaCopy,  1, NmDmaCopy,  ExDmaCopy
     check ChkDmaTime,  2, NmDmaTime,  ExDmaTime
     check ChkDmaReg,   3, NmDmaReg,   ExDmaReg
+    check ChkDmaBus,   4, NmDmaBus,   ExDmaBus
+    check ChkDmaA12,   5, NmDmaA12,   ExDmaA12
     dw 0
 
+NmDmaA12:  db "where a work-RAM write lands during a transfer",0
+ExDmaA12:  db "reported rather than judged: no published reference documents this",0
+NmDmaBus:  db "the transfer shares the cartridge bus",0
+ExDmaBus:  db "the transfer has no bus of its own, so a read on the bus it uses sees its byte",0
 NmDmaCopy: db "the transfer copies 160 bytes",0
 ExDmaCopy: db "the object attribute memory does not hold what was sent to it",0
 NmDmaTime: db "the transfer is not instantaneous",0

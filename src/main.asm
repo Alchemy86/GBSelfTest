@@ -511,6 +511,21 @@ ReportSkip:
     ld a, [wName + 1]
     ld h, a
     call PrintLine
+    ; A check that reports rather than judges has an observation to print, and
+    ; a report with the observation missing is no use to the reader.
+    ld a, [wHaveNums]
+    or a
+    jr z, .noNums2
+    ld hl, .saw
+    call PrintStr
+    ld hl, wGot
+    call SerialWordHex
+    ld hl, .versus
+    call PrintStr
+    ld hl, wWant
+    call SerialWordHex
+    call PrintNewline
+.noNums2
     ld hl, .arrow2
     call PrintStr
     ld a, [wDetail]
@@ -523,6 +538,8 @@ ReportSkip:
     ret
 .skip db " skip ",0
 .arrow2 db "      -> ",0
+.saw    db "      saw ",0
+.versus db "  against ",0
 
 ReportFail:
     ld a, SINK_SERIAL

@@ -644,3 +644,66 @@ ChkTimaWrap::
     jp FailNote
 .noteIrq db "TIMA wrapped past $FF and bit 2 of IF was never set. The overflow IS the interrupt",0
 .noteTma db "after wrapping, TIMA must restart from TMA rather than from zero",0
+
+; ---------------------------------------------------------------------------
+; GB-CYC-07 — a memory access happens on its own machine cycle, not at the end
+; of the instruction it is in.
+;
+; This is the one check here that detects a *shortcut* rather than a mistake.
+; An emulator that advances its peripherals once per instruction instead of
+; once per memory access still runs every clock at exactly the right rate, so
+; nothing measured over a run of instructions can tell the difference. What
+; gives it away is two reads of the same register from the same starting phase
+; by instructions of different lengths.
+;
+; The timer is set to its fastest tap, so TIMA counts once every four machine
+; cycles. A write to $FF04 resets the whole counter, and on hardware that write
+; lands on the write instruction's own last cycle — so the counter is at zero
+; when the next instruction begins.
+;
+;   ldh a, [rTIMA]   three cycles, the read on the third   -> counter 3, TIMA 0
+;   ld  a, [$FF05]   four cycles,  the read on the fourth  -> counter 4, TIMA 1
+;
+; One tick apart. Advance the peripherals per instruction instead and both
+; reads see the counter as it stood when their instruction began, which is the
+; same value, so the difference collapses to zero. That is the whole check.
+; ---------------------------------------------------------------------------
+ChkCycPhase::
+    call LcdOff
+    di
+    xor a
+    ldh [rTMA], a
+    ld a, %00000101         ; enabled, 262144 Hz: TIMA every four cycles
+    ldh [rTAC], a
+
+    ; trial one — a three-cycle read
+    xor a
+    ldh [rTIMA], a
+    ldh [rDIV], a           ; the reset lands on this instruction's third cycle
+    ldh a, [rTIMA]          ; and this read on its own third
+    ld b, a
+
+    ; trial two — a four-cycle read of the same register, same phase
+    xor a
+    ldh [rTIMA], a
+    ldh [rDIV], a
+    ld a, [$FF05]
+    ld c, a
+
+    xor a
+    ldh [rTAC], a           ; leave the timer as it was found
+
+    ; the four-cycle read must have seen exactly one tick more
+    ld a, c
+    sub b
+    cp 1
+    jr nz, .bad
+    or a
+    ret
+.bad
+    ld a, c
+    ld b, b                 ; got = the four-cycle read, want = the three-cycle
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.note db "two reads of the timer from the same phase, by a three-cycle instruction and a four-cycle one, must differ by one tick. They did not, so memory accesses are not landing on their own machine cycles: the peripherals are being advanced once per instruction. Every clock still runs at the right rate, so only a check like this one can see it",0
