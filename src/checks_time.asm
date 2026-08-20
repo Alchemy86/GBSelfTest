@@ -657,53 +657,360 @@ ChkTimaWrap::
 ; by instructions of different lengths.
 ;
 ; The timer is set to its fastest tap, so TIMA counts once every four machine
-; cycles. A write to $FF04 resets the whole counter, and on hardware that write
-; lands on the write instruction's own last cycle — so the counter is at zero
-; when the next instruction begins.
+; cycles. The counter is restarted by a write to $FF04 and TIMA is zeroed
+; AFTER that write, so every reading starts from a counter this check set
+; itself. Then the same reading is taken at four consecutive one-cycle delays:
 ;
-;   ldh a, [rTIMA]   three cycles, the read on the third   -> counter 3, TIMA 0
-;   ld  a, [$FF05]   four cycles,  the read on the fourth  -> counter 4, TIMA 1
+;   delay          0     1     2     3
+;   ldh a,[rTIMA]  n    n+1   n+1   n+1    the read on the instruction's third
+;   ld  a,[$FF05] n+1   n+1   n+1   n+1    the read on its fourth
 ;
-; One tick apart. Advance the peripherals per instruction instead and both
-; reads see the counter as it stood when their instruction began, which is the
-; same value, so the difference collapses to zero. That is the whole check.
+; A tick is four machine cycles, so the tap crosses exactly once in four; and
+; the four-cycle read is one cycle later than the three-cycle one, so its
+; crossing comes one delay earlier. The two rows are therefore the same row
+; shifted by one, which is another way of saying the two instructions read the
+; register at different points inside themselves. Exactly one of the four
+; delays shows a difference of one and the other three show none.
+;
+; Advance the peripherals once per instruction instead and both rows become the
+; reading as it stood when the instruction began — the same reading — so every
+; difference is zero and no delay shows anything. That is the whole check.
+;
+; The rows above were measured on SameBoy and on TerminalGB and are identical
+; byte for byte across the whole sweep, which is what says the numbers belong
+; to the hardware rather than to either implementation.
+;
+; WHAT THE FIRST VERSION OF THIS CHECK DID, AND WHY IT WAS WRONG. It took one
+; reading with each instruction and required the difference to be one tick. But
+; it zeroed TIMA and only then wrote $FF04, which leaves TIMA cleared three
+; cycles BEFORE the counter restarts — and whether the tapped bit falls inside
+; those three cycles, and whether the $FF04 write is itself a falling edge
+; (which is GB-TIM-06, and a fact about the same tap), both depend on the phase
+; the check happened to be entered in. That phase is decided by how much code
+; ran above it, so the verdict was decided by the rest of the run rather than by
+; the machine: the same reasoning passed on one emulator and failed on SameBoy,
+; and swapping which checks failed earlier was enough to swap the answer. A
+; check that detects a shortcut has to be the most phase-proof thing in the
+; suite, not the least.
 ; ---------------------------------------------------------------------------
+DEF PHASE_PAD EQU 4
+
+DEF X_PHA EQU wScratch + 40     ; the three-cycle read
+DEF X_PHD EQU wScratch + 41     ; the delay being swept
+DEF X_PHN EQU wScratch + 42     ; how many delays showed a step
+
 ChkCycPhase::
     call LcdOff
-    di
     xor a
-    ldh [rTMA], a
-    ld a, %00000101         ; enabled, 262144 Hz: TIMA every four cycles
-    ldh [rTAC], a
-
-    ; trial one — a three-cycle read
-    xor a
-    ldh [rTIMA], a
-    ldh [rDIV], a           ; the reset lands on this instruction's third cycle
-    ldh a, [rTIMA]          ; and this read on its own third
-    ld b, a
-
-    ; trial two — a four-cycle read of the same register, same phase
-    xor a
-    ldh [rTIMA], a
-    ldh [rDIV], a
-    ld a, [$FF05]
-    ld c, a
-
-    xor a
-    ldh [rTAC], a           ; leave the timer as it was found
-
-    ; the four-cycle read must have seen exactly one tick more
-    ld a, c
-    sub b
+    ld [X_PHD], a
+    ld [X_PHN], a
+.next
+    ld a, [X_PHD]
+    call PhaseA
+    ld [X_PHA], a
+    ld a, [X_PHD]
+    call PhaseB
+    ld hl, X_PHA
+    sub [hl]                ; the four-cycle read minus the three-cycle one
+    jr z, .same
     cp 1
-    jr nz, .bad
+    jr nz, .odd
+    ld hl, X_PHN
+    inc [hl]
+.same
+    ld hl, X_PHD
+    inc [hl]
+    ld a, [hl]
+    cp PHASE_PAD
+    jr nz, .next
+
+    ld a, [X_PHN]
+    cp 1
+    jr nz, .none
     or a
     ret
-.bad
-    ld a, c
-    ld b, b                 ; got = the four-cycle read, want = the three-cycle
+.odd
+    ld b, 1
+    call SetNums8
+    ld hl, .noteOdd
+    jp FailNote
+.none
+    ld a, [X_PHN]
+    ld b, 1
     call SetNums8
     ld hl, .note
     jp FailNote
-.note db "two reads of the timer from the same phase, by a three-cycle instruction and a four-cycle one, must differ by one tick. They did not, so memory accesses are not landing on their own machine cycles: the peripherals are being advanced once per instruction. Every clock still runs at the right rate, so only a check like this one can see it",0
+.note db "over four one-cycle delays the four-cycle read must overtake the three-cycle one exactly once. It never did, so both instructions are reading the timer at the same point: memory accesses are not landing on their own machine cycles and the peripherals are being advanced once per instruction. Every clock still runs at the right rate, so only a check shaped like this one can see it",0
+.noteOdd db "the four-cycle read came out further than one tick from the three-cycle read at the same delay. They are one machine cycle apart and a tick is four, so the only differences possible are none and one",0
+
+; ---------------------------------------------------------------------------
+; PhaseA / PhaseB — A = the delay in machine cycles. Each restarts the counter,
+; zeroes TIMA, waits that many cycles and reads $FF05, one with the three-cycle
+; instruction and one with the four-cycle one. Returns A = what it read.
+;
+; The delay is made by jumping INTO a sled of nops rather than by a loop: a
+; loop would cost a different number of cycles per iteration, which is the one
+; thing this measurement cannot have.
+; ---------------------------------------------------------------------------
+PhaseA:
+    ld e, a
+    ld a, PHASE_PAD
+    sub e
+    ld e, a
+    ld d, 0
+    ld hl, PhaseSledA
+    add hl, de
+    jr PhaseGo
+
+PhaseB:
+    ld e, a
+    ld a, PHASE_PAD
+    sub e
+    ld e, a
+    ld d, 0
+    ld hl, PhaseSledB
+    add hl, de
+    ; falls through
+
+PhaseGo:
+    di
+    xor a
+    ldh [rTMA], a
+    ld a, TACF_START | TACF_16T
+    ldh [rTAC], a
+    xor a
+    ldh [rDIV], a           ; the counter restarts on this instruction's cycle
+    ldh [rTIMA], a          ; and TIMA is zeroed a fixed three cycles into it
+    jp hl
+
+PhaseSledA:
+    REPT PHASE_PAD
+    nop
+    ENDR
+    ldh a, [rTIMA]
+    ld b, a
+    xor a
+    ldh [rTAC], a           ; leave the timer as it was found
+    ld a, b
+    ret
+
+PhaseSledB:
+    REPT PHASE_PAD
+    nop
+    ENDR
+    ld a, [$FF05]
+    ld b, a
+    xor a
+    ldh [rTAC], a
+    ld a, b
+    ret
+
+; ---------------------------------------------------------------------------
+; GB-CYC-08 — an interrupt lands on the instruction the clock chose.
+;
+; The companion to GB-CYC-07, and it catches the other half of the same family
+; of shortcut. GB-CYC-07 asks whether a memory access lands on its own cycle;
+; this one asks whether an event nobody asked for lands on its own cycle.
+;
+; The shortcut it is aimed at is horizon batching: the peripherals each publish
+; the next moment they could be observed, the CPU is let run to the nearest of
+; them, and only then is everything advanced in one step. Done properly that is
+; exact and costs nothing, and this check passes — a correct horizon includes
+; the timer's own overflow. Done with a horizon that misses something, or with
+; a fixed batch of instructions, interrupts stop arriving where the clock put
+; them and start arriving where the batch ended. Nothing measured over a run of
+; instructions can see that either: the interrupt is still delivered, still
+; once, and the frame is still the right length.
+;
+; The measurement needs no reference and no cycle counting. A sled of `nop`s is
+; run with the timer set to overflow inside it, and the handler reads the
+; return address off the stack — which is the address of the instruction that
+; was about to run, so it names the sled position the interrupt landed on to
+; one machine cycle. The sled is then entered one cycle later, and one cycle
+; later again, eight times. The overflow is unmoved, so each extra cycle before
+; the sled must move the landing back by exactly one `nop`:
+;
+;   delay      0     1     2     3     4     5     6     7
+;   landing    n    n-1   n-2   n-3   n-4   n-5   n-6   n-7
+;
+; Deliver at a batch boundary instead and the landing stops moving with the
+; delay: several delays in a row report the same address, which is the whole
+; failure. Nothing here depends on WHICH address n is, only that it steps, so
+; the check is independent of every constant in the machine but the fact that a
+; `nop` is one machine cycle.
+;
+; Source: TerminalGB docs/conformance-notes.md, 2026-08-20, "speed as a
+; first-class measurement" — "the same shape generalises to any shortcut that
+; preserves totals: find the observation that depends on phase within an
+; instruction rather than on a rate"; and docs/measured/speed-ledger.md §5,
+; which names the technique.
+; ---------------------------------------------------------------------------
+DEF LAND_PAD  EQU 8             ; delays swept, one machine cycle apart
+DEF LAND_SLED EQU 64            ; nops the interrupt is given to land in
+DEF LAND_TIMA EQU 256 - 12      ; twelve ticks, so the landing sits mid-sled
+
+DEF X_LAND EQU wScratch + 44    ; two bytes: where the interrupt landed
+DEF X_LPRV EQU wScratch + 46    ; two bytes: where it landed last time
+DEF X_LDLY EQU wScratch + 48
+
+ChkCycLand::
+    call LcdOff
+    xor a
+    ld [X_LDLY], a
+.next
+    ld a, [X_LDLY]
+    call LandRun            ; hl = the landing, or zero if none arrived
+    ld a, h
+    or l
+    jr z, .never
+
+    ; Inside the sled, or the reading is not a reading.
+    ld de, LandSledBody
+    ld a, l
+    sub e
+    ld a, h
+    sbc d
+    jr c, .outside
+    ld de, LandSledBody + LAND_SLED
+    ld a, l
+    sub e
+    ld a, h
+    sbc d
+    jr nc, .outside
+
+    ld a, [X_LDLY]
+    or a
+    jr z, .keep             ; the first reading has nothing to be compared with
+
+    ; want = the previous landing, one instruction earlier
+    ld a, [X_LPRV]
+    ld e, a
+    ld a, [X_LPRV + 1]
+    ld d, a
+    dec de
+    ld a, e
+    cp l
+    jr nz, .stuck
+    ld a, d
+    cp h
+    jr nz, .stuck
+.keep
+    ld a, l
+    ld [X_LPRV], a
+    ld a, h
+    ld [X_LPRV + 1], a
+    ld hl, X_LDLY
+    inc [hl]
+    ld a, [hl]
+    cp LAND_PAD
+    jr nz, .next
+    or a
+    ret
+
+.stuck
+    ; got = where it landed, want = where the clock put it
+    ld b, h
+    ld c, l
+    ld h, d
+    ld l, e
+    ld d, b
+    ld e, c
+    call SetNums16
+    ld hl, .noteStuck
+    jp FailNote
+.never
+    ld hl, .noteNever
+    jp FailNote
+.outside
+    ld d, h
+    ld e, l
+    ld hl, LandSledBody
+    call SetNums16
+    ld hl, .noteOutside
+    jp FailNote
+.noteStuck db "delaying the sled by one more machine cycle did not move the instruction the interrupt landed on. The overflow did not move, so the landing had to: an interrupt is being delivered where a batch of instructions ended rather than where the clock raised it",0
+.noteNever db "the timer interrupt never arrived inside the sled at all",0
+.noteOutside db "the interrupt landed outside the sled it was aimed at, so nothing here was measured",0
+
+; ---------------------------------------------------------------------------
+; LandRun — A = the delay in machine cycles. Runs the sled once with the timer
+; overflowing inside it. Returns HL = the address the handler was returning to,
+; which is the instruction the interrupt landed on, or $0000 if none arrived.
+;
+; The delay is made by entering a sled of nops part-way along, never by a loop:
+; a loop's iterations are not one machine cycle each, which is the only unit
+; this measurement has.
+; ---------------------------------------------------------------------------
+LandRun:
+    ld e, a
+    ld a, LAND_PAD
+    sub e
+    ld e, a
+    ld d, 0
+    ld hl, LandPad
+    add hl, de
+    ld d, h
+    ld e, l                 ; de = where to enter, kept out of the way
+
+    di
+    ld hl, wHookTimer
+    ld a, LOW(LandIsr)
+    ld [hl+], a
+    ld a, HIGH(LandIsr)
+    ld [hl], a
+    xor a
+    ld [X_LAND], a
+    ld [X_LAND + 1], a
+    ldh [rTMA], a
+    ld a, IEF_TIMER
+    ldh [rIE], a
+    ld a, TACF_START | TACF_16T
+    ldh [rTAC], a
+
+    ld h, d
+    ld l, e
+    xor a
+    ldh [rIF], a
+    ldh [rDIV], a           ; the counter restarts on this instruction's cycle
+    ld a, LAND_TIMA
+    ldh [rTIMA], a          ; a fixed number of cycles after it, every time
+    ei                      ; so the master enable comes up on the sled's first
+    jp hl                   ; instruction, whatever the delay
+
+LandPad:
+    REPT LAND_PAD
+    nop
+    ENDR
+LandSledBody:
+    REPT LAND_SLED
+    nop
+    ENDR
+    di
+    xor a
+    ldh [rTAC], a
+    ldh [rIE], a
+    ldh [rIF], a
+    ld hl, wHookTimer
+    ld a, LOW(DefaultIsr)
+    ld [hl+], a
+    ld a, HIGH(DefaultIsr)
+    ld [hl], a
+    ld a, [X_LAND]
+    ld l, a
+    ld a, [X_LAND + 1]
+    ld h, a
+    ret                     ; back to LandRun's caller
+
+; The handler. Entered with the interrupted code's HL on the stack and the
+; return address under it; AF is live and this sled has no use for it.
+LandIsr:
+    ld hl, sp+2
+    ld a, [hl+]
+    ld [X_LAND], a
+    ld a, [hl]
+    ld [X_LAND + 1], a
+    xor a
+    ldh [rIE], a            ; one interrupt to a run
+    ldh [rTAC], a
+    pop hl
+    reti

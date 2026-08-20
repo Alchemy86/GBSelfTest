@@ -1,4 +1,4 @@
-GB-TIM-06 FAIL writing DIV can itself clock the timer
-      got $0000  want $0001
-      -> clearing the divider while the timer's watched bit was set did not increment TIMA. The timer counts falling edges of one bit of the divider's own counter, and a write that clears that bit IS a falling edge
-      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-tim-06
+GB-CYC-07 FAIL an access lands on its own cycle
+      got $00FF  want $0001
+      -> the four-cycle read came out further than one tick from the three-cycle read at the same delay. They are one machine cycle apart and a tick is four, so the only differences possible are none and one
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-cyc-07

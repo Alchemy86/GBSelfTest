@@ -28,6 +28,11 @@ GB-CYC-03 ok   PUSH, POP, CALL and RET
 GB-CYC-04 ok   jumps taken and not taken
 GB-CYC-05 ok   CB-prefixed operations
 GB-CYC-06 ok   restarts, returns and the register-addressed load
+GB-CYC-07 FAIL an access lands on its own cycle
+      got $00FF  want $0001
+      -> the four-cycle read came out further than one tick from the three-cycle read at the same delay. They are one machine cycle apart and a tick is four, so the only differences possible are none and one
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-cyc-07
+GB-CYC-08 ok   an interrupt lands on the cycle it was raised
 --- TIM: the divider and the timer
 GB-TIM-01 ok   the divider and the timer share one counter
 GB-TIM-02 ok   writing DIV clears it
@@ -62,12 +67,17 @@ GB-INT-08 ok   IE stores all eight bits, IF does not
 GB-INT-09 ok   RETI restores the master enable
 GB-INT-10 ok   clearing IF cancels a pending interrupt
 GB-INT-11 ok   clearing IE prevents dispatch and keeps the flag
+GB-INT-12 ok   a run of EI instructions still enables
 --- MEM: the memory map
 GB-MEM-01 ok   work RAM appears again at $E000
 GB-MEM-02 ok   high RAM is its own 127 bytes
 GB-MEM-03 ok   writes to the ROM area do not stick
 GB-MEM-04 ok   video RAM is eight kilobytes
 GB-MEM-05 ok   object memory is 160 bytes and stops
+GB-MEM-06 FAIL $FEA0-$FEFF answers, per console
+      got $00FF  want $0000
+      -> with the screen off, $FEA0 and $FEF0 must read $00 on this console. Reading $FF means the region is being treated as a hole, which is only right while object memory is blocked
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-mem-06
 --- PPU: timing and the rendering fingerprint
 GB-PPU-01 FAIL a frame is 70224 cycles, measured against DIV
       got $0119  want $0112
@@ -112,6 +122,18 @@ GB-PPU-18 FAIL an object off the left edge still costs
       -> ten objects placed entirely off the left of the screen cost the fetcher nothing. They are still found by the scan and their rows are still fetched; only the drawing is thrown away
       -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-18
 GB-PPU-19 ok   vertical scrolling costs the fetcher nothing
+GB-PPU-20 FAIL a VRAM write during mode 3 is dropped
+      got $005A  want $0000
+      -> a byte written into video RAM during mode 3 was still there afterwards. The fetcher owns that bus while it is drawing and a write there never reaches the memory, which is what lets a game write blindly and only lose the writes it placed badly
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-20
+GB-PPU-21 FAIL an OAM write during the scan is dropped
+      got $005A  want $0000
+      -> a byte written into object memory during the object scan was still there afterwards. The PPU owns that bus through modes 2 and 3, which is why every game copies its objects in during the blank instead
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-21
+GB-PPU-22 FAIL object memory corrupts, or does not, per console
+      got $0000  want $0001
+      -> not one byte of object memory changed. On this console the increment unit's operand reaches the bus the object scan is using, and a sixteen-bit increment through $FE00-$FEFF during mode 2 corrupts a row of it. Hooking the read and the write paths and stopping there is the usual way to miss this: no read and no write is involved
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-22
 --- DMA: the object transfer
 GB-DMA-01 ok   the transfer copies 160 bytes
 GB-DMA-02 FAIL the transfer is not instantaneous
@@ -119,6 +141,11 @@ GB-DMA-02 FAIL the transfer is not instantaneous
       -> object memory was readable one instruction after the transfer began, and already held the new byte. The transfer takes 160 machine cycles and the CPU cannot see object memory during them
       -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-dma-02
 GB-DMA-03 ok   $FF46 reads back the page written
+GB-DMA-04 FAIL the transfer shares the cartridge bus
+      -> three reads of one fixed cartridge address, taken while a transfer sourced from the cartridge was running, all returned that address's own byte. The transfer controller has no bus of its own: it drives the source address onto the cartridge bus, so a read on that bus during the transfer sees the byte the transfer is moving
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-dma-04
+GB-DMA-05 skip where a work-RAM write lands during a transfer
+      -> work RAM shares the cartridge bus on this console, so a write during the transfer is an ordinary bus conflict and there is no address question to ask
 --- APU: registers and the length counter
 GB-APU-01 FAIL every register reads back its documented bits
       got $00FF  want $0080
@@ -161,6 +188,7 @@ GB-BOOT-04 FAIL unimplemented I/O reads back as ones
       -> an address in the register page with nothing behind it returned something other than $FF. Nothing drives the bus there, so it floats high
       -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-boot-04
 GB-BOOT-05 ok   the boot ROM leaves its vertical blank pending
+GB-BOOT-06 ok   the divider is not zero at hand-over
 --- SER: the link port
 GB-SER-01 ok   SB is a plain read/write register
 GB-SER-02 FAIL SC's unused bits read as ones
@@ -203,6 +231,6 @@ This is a first-response cartridge: broad, fast, self-explaining, and
 one file. It is not a replacement for any of the above.
 
 
-TOTAL 64/87 checks
-cost 133 frames, sent 13502 B
+TOTAL 67/97 checks, 1 skipped
+cost 133 frames, sent 16446 B
 Failed

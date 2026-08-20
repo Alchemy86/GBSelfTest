@@ -19,6 +19,8 @@ RSSET $C000
 DEF wBootRegs   RB 8
 DEF wBootSP     RW 1
 DEF wBootIF     RB 1
+DEF wBootDiv    RB 1            ; the divider as the boot ROM left it, read as
+                                ; early as the capture can reach it
 DEF wConsole    RB 1
 
 DEF BOOT_F EQU wBootRegs + 0

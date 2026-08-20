@@ -1366,3 +1366,290 @@ ChkMode3Scy::
     jp SkipWith
 .note     db "an SCY that is not a multiple of eight lengthened mode 3. Only SCX can: it discards pixels the fetcher has already fetched, whereas SCY only picks which row of the tile is read, and every row costs the same",0
 .noteSkip db "not run: the coincidence interrupt never fired",0
+
+; ---------------------------------------------------------------------------
+; GB-PPU-20 — a write into video RAM while the fetcher owns it is dropped.
+;
+; GB-PPU-10 already asks the read half of this: during mode 3 the CPU reads
+; $FF out of video RAM because the fetcher has the bus. The write half is a
+; separate implementation and a separate bug, and it is the one that changes
+; what a player sees: a write that hardware discards but an emulator honours
+; puts tile data or a map entry on the screen mid-frame that no real console
+; ever shows. An emulator can easily block one and not the other -- reads and
+; writes are different functions -- so the two are asked separately.
+;
+; The measurement waits for mode 2 first and only then for mode 3, so the write
+; lands within a few machine cycles of the START of mode 3 and cannot fall out
+; of the far end of a short one. Mode 3 is at least 172 dots, which is forty
+; machine cycles of room.
+;
+; The byte is read back with the screen off, where nothing can refuse it.
+;
+; Source: Pan Docs, "Accessing VRAM and OAM"; TerminalGB
+; docs/conformance-notes.md, 2026-08-15, "VRAM/OAM access blocking" §1 -- "a
+; program that deliberately writes into the blocked window to prove it is
+; blocked reads its own value back instead of $FF".
+; ---------------------------------------------------------------------------
+DEF BLOCKED_PROBE EQU _VRAM + $20 * 16      ; the blank glyph's first byte
+DEF BLOCKED_MARK  EQU $5A
+
+ChkVramWriteBlock::
+    call LcdOff
+    xor a
+    ld [BLOCKED_PROBE], a           ; a known byte, written where it is allowed
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON
+    ldh [rLCDC], a
+    di
+    ld hl, BLOCKED_PROBE
+    ld b, BLOCKED_MARK
+    call EnterMode3
+    jr c, .never
+    ld [hl], b                      ; the write under test
+    call LcdOff
+    ld a, [BLOCKED_PROBE]
+    or a
+    jr nz, .landed
+    ret                             ; carry is already clear
+.landed
+    ld b, 0
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.never
+    ld hl, .noteNever
+    jp FailNote
+.note      db "a byte written into video RAM during mode 3 was still there afterwards. The fetcher owns that bus while it is drawing and a write there never reaches the memory, which is what lets a game write blindly and only lose the writes it placed badly",0
+.noteNever db "STAT never reported mode 2 followed by mode 3 at all",0
+
+; ---------------------------------------------------------------------------
+; GB-PPU-21 — a write into object memory while the PPU is scanning it is
+; dropped.
+;
+; The same question of the other bus, and the one games lean on hardest: every
+; object update in every game is placed in the blank because the PPU refuses it
+; anywhere else.
+;
+; The byte written is object 0's Y coordinate. Object 0 is in the first of the
+; twenty rows the scan walks, and that row is the one row the Game Boy's own
+; object-memory corruption defect can never reach -- it has no row above it to
+; be copied from -- so this check reads back exactly what it wrote or exactly
+; what was there before, and never a third thing. GB-PPU-22 is where that
+; defect is asked about on purpose.
+;
+; Source: Pan Docs, "Accessing VRAM and OAM"; TerminalGB
+; docs/conformance-notes.md, 2026-08-15, "VRAM/OAM access blocking" §1.
+; ---------------------------------------------------------------------------
+ChkOamWriteBlock::
+    call LcdOff
+    call ClearObjects
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON
+    ldh [rLCDC], a
+    di
+    ld hl, _OAMRAM
+    ld b, BLOCKED_MARK
+    call EnterMode2
+    jr c, .never
+    ld [hl], b                      ; the write under test
+    call LcdOff
+    ld a, [_OAMRAM]
+    or a
+    jr nz, .landed
+    call ClearObjects
+    ret
+.landed
+    ld b, 0
+    call SetNums8
+    call ClearObjects
+    ld hl, .note
+    jp FailNote
+.never
+    call ClearObjects
+    ld hl, .noteNever
+    jp FailNote
+.note      db "a byte written into object memory during the object scan was still there afterwards. The PPU owns that bus through modes 2 and 3, which is why every game copies its objects in during the blank instead",0
+.noteNever db "STAT never reported mode 0 followed by mode 2 at all",0
+
+; ---------------------------------------------------------------------------
+; EnterMode2 / EnterMode3 — stop a few machine cycles into the named mode, having
+; seen the mode before it. Waiting for the mode alone is not enough: the poll
+; loop is five machine cycles, so it can catch a mode in its last twenty dots
+; and hand back a window that has already closed. Seeing the previous mode
+; first pins the answer to the near end of the one that is wanted.
+;
+; Carry set means the sequence never appeared and nothing was measured.
+; ---------------------------------------------------------------------------
+EnterMode3:
+    ld c, 2
+    call EnterMode
+    ret c
+    ld c, 3
+    jr EnterMode
+
+EnterMode2:
+    ld c, 0
+    call EnterMode
+    ret c
+    ld c, 2
+    ; falls through
+
+; EnterMode — C = the mode to stop on. Preserves HL and B.
+EnterMode:
+    push de
+    ld de, 30000
+.wait
+    ldh a, [rSTAT]
+    and 3
+    cp c
+    jr z, .there
+    dec de
+    ld a, d
+    or e
+    jr nz, .wait
+    pop de
+    scf
+    ret
+.there
+    pop de
+    or a
+    ret
+
+; ---------------------------------------------------------------------------
+; GB-PPU-22 — the object-memory corruption defect, and the two machines that
+; disagree about it.
+;
+; A fault in the original silicon, and one of the few places where conformance
+; means reproducing damage rather than avoiding it. The processor's sixteen-bit
+; increment unit is wired straight to the address bus and asserts its operand
+; as an address whether or not any read or write is behind it. So while the PPU
+; is walking object memory -- mode 2, the first eighty dots of every visible
+; line -- an `inc de` whose DE happens to hold a value in $FE00-$FEFF reaches
+; the same bus the scan is using, and a whole eight-byte row is copied from its
+; neighbour with one word mangled.
+;
+; It matters twice over. A game that trips it on hardware and not on an
+; emulator shows garbled sprites the emulator draws cleanly, which is a bug
+; report nobody can reproduce; and the Color console FIXED it, so an emulator
+; that models the defect unconditionally is emulating a machine that has never
+; existed. Both directions are asserted here, which is why this check reads the
+; console first and why it is a real check on a Color machine rather than a
+; skip: "nothing was corrupted" is the answer, not the absence of one.
+;
+; What is NOT asked is which row was corrupted or how. That is a function of
+; the exact dot the offending cycle landed on, and the suites that pin it --
+; Blargg's `oam_bug`, sub-tests 4, 7 and 8 -- do it far better than a
+; first-response cartridge should try to. This asks only the question those
+; suites call `2-causes`: does the address bus reach the scan at all.
+;
+; Row 0 is deliberately not exempted from the comparison even though the
+; hardware never corrupts it -- it has no row above it to be copied from -- and
+; that costs nothing: any of the other nineteen changing is enough.
+;
+; Source: Pan Docs, "OAM Corruption Bug"; TerminalGB
+; docs/conformance-notes.md, 2026-08-14, "the DMG OAM-corruption bug: a defect
+; that had to be *added*", and docs/measured/ppu.md, which records that Pan
+; Docs is explicit the Color and Advance consoles are unaffected "even running
+; monochrome software".
+; ---------------------------------------------------------------------------
+DEF OAMBUG_ROUNDS EQU 4
+
+ChkOamBug::
+    ld a, [wConsole]
+    cp CONSOLE_DMG
+    jr z, .mono
+    cp CONSOLE_MGB
+    jr z, .mono
+    cp CONSOLE_CGB
+    jr z, .colour
+    cp CONSOLE_AGB
+    jr z, .colour
+    ld hl, .noteUnknown
+    jp SkipWith
+
+.mono
+    call OamBugRun
+    or a
+    jr z, .noneMono
+    call ClearObjects
+    or a
+    ret
+.colour
+    call OamBugRun
+    or a
+    jr nz, .someColour
+    call ClearObjects
+    or a
+    ret
+
+.noneMono
+    ld b, 1                 ; got none, wanted at least one
+    call SetNums8
+    call ClearObjects
+    ld hl, .noteMono
+    jp FailNote
+.someColour
+    ld b, 0
+    call SetNums8
+    call ClearObjects
+    ld hl, .noteColour
+    jp FailNote
+.noteMono   db "not one byte of object memory changed. On this console the increment unit's operand reaches the bus the object scan is using, and a sixteen-bit increment through $FE00-$FEFF during mode 2 corrupts a row of it. Hooking the read and the write paths and stopping there is the usual way to miss this: no read and no write is involved",0
+.noteColour db "object memory was corrupted. The increment unit's reach into the object scan is a defect of the original silicon and the Color console does not have it, even running monochrome software, so a machine identifying itself as a Color one must come through this untouched",0
+.noteUnknown db "the console could not be identified, and this defect exists on some of them and not others",0
+
+; ---------------------------------------------------------------------------
+; OamBugRun — fill object memory with a pattern no two neighbouring bytes
+; share, run a burst of sixteen-bit increments through the object-memory
+; address range with the screen on, and return A = how many of the 160 bytes
+; came back different.
+;
+; The burst is a loop rather than a straight run of instructions because it has
+; to cover whole scanlines: the scan is eighty dots of every 456, so the only
+; way to be sure of meeting it is to keep going for longer than a line. Four
+; rounds of 256 iterations is a little over a hundred lines, which meets the
+; scan a hundred times. Nothing here needs to know WHEN it met it.
+; ---------------------------------------------------------------------------
+OamBugRun:
+    call LcdOff
+    ld hl, _OAMRAM
+    ld c, 160
+    ld b, 1
+.fill
+    ld a, b
+    ld [hl+], a
+    inc b
+    dec c
+    jr nz, .fill
+
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON
+    ldh [rLCDC], a
+    di
+    ld c, OAMBUG_ROUNDS
+.round
+    ld de, _OAMRAM
+    ld b, 0
+.burst
+    inc de                  ; each of these asserts an address in $FE00-$FEFF
+    dec de                  ; and none of them reads or writes anything
+    inc de
+    dec de
+    dec b
+    jr nz, .burst
+    dec c
+    jr nz, .round
+
+    call LcdOff
+    ld hl, _OAMRAM
+    ld c, 160
+    ld d, 1
+    ld e, 0
+.count
+    ld a, [hl+]
+    cp d
+    jr z, .same
+    inc e
+.same
+    inc d
+    dec c
+    jr nz, .count
+    ld a, e
+    ret

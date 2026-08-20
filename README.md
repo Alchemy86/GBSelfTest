@@ -5,17 +5,17 @@
 <p align="center">
   <a href="LICENSE"><img alt="licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue"></a>
   <a href="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml"><img alt="build" src="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml/badge.svg"></a>
-  <a href="docs/CHECKS.md"><img alt="87 checks" src="https://img.shields.io/badge/checks-87-9bbc0f"></a>
+  <a href="docs/CHECKS.md"><img alt="97 checks" src="https://img.shields.io/badge/checks-97-9bbc0f"></a>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/report-sameboy-dmg.png" alt="The report on screen: eleven areas, 87 of 87 checks, Passed" width="480">
+  <img src="docs/screenshots/report-sameboy-dmg.png" alt="The report on screen: eleven areas, 96 of 97 checks with one skipped, Passed" width="480">
 </p>
 
 **Boot this on any emulator or on a real console, and it tells you what is broken
 and where to read about it.**
 
-One file. No host, no reference images, no setup: it runs 87 checks unattended and
+One file. No host, no reference images, no setup: it runs 97 checks unattended and
 reports the verdict twice over — as text on the screen, and as the same text out
 of the link port so a machine can read it with nobody watching.
 
@@ -27,7 +27,7 @@ link port carries the whole story, including the measured value, one line of
 hardware explanation, and the URL to read.
 
 <p align="center">
-  <img src="docs/screenshots/report-peanut.png" alt="A failing report: per-area FAILs, 64 of 87, then the failing codes and where to read about them" width="480">
+  <img src="docs/screenshots/report-peanut.png" alt="A failing report: per-area FAILs, 67 of 97, then the failing codes and where to read about them" width="480">
 </p>
 
 The same failure, as the link port sends it — verbatim, straight from the run that
@@ -35,10 +35,10 @@ took the picture above:
 
 <!-- failure-excerpt -->
 ```
-GB-TIM-06 FAIL writing DIV can itself clock the timer
-      got $0000  want $0001
-      -> clearing the divider while the timer's watched bit was set did not increment TIMA. The timer counts falling edges of one bit of the divider's own counter, and a write that clears that bit IS a falling edge
-      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-tim-06
+GB-CYC-07 FAIL an access lands on its own cycle
+      got $00FF  want $0001
+      -> the four-cycle read came out further than one tick from the three-cycle read at the same delay. They are one machine cycle apart and a tick is four, so the only differences possible are none and one
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-cyc-07
 ```
 <!-- /failure-excerpt -->
 
@@ -90,8 +90,8 @@ GB-PPU-01 ok   a frame is 70224 cycles, measured against DIV
 GB-PPU-02 ok   a scanline is 456 cycles
 ...
 
-TOTAL 87/87 checks
-cost 132 frames, sent 6927 B
+TOTAL 96/97 checks, 1 skipped
+cost 132 frames, sent 7659 B
 Passed
 ```
 
@@ -146,13 +146,13 @@ The same cartridge, the same eighty-seven checks, two emulators:
 <!-- scoreboard -->
 | implementation | result |
 |---|---:|
-| SameBoy, DMG | 87 / 87 |
-| SameBoy, MGB (Pocket) | 87 / 87 |
-| SameBoy, CGB-E | 84 / 87, 3 skipped |
-| SameBoy, AGB | 84 / 87, 3 skipped |
-| TerminalGB, per-dot renderer | 86 / 87 |
-| TerminalGB, whole-scanline renderer | 80 / 87 |
-| Peanut-GB | 64 / 87 |
+| SameBoy, DMG | 96 / 97, 1 skipped |
+| SameBoy, MGB (Pocket) | 96 / 97, 1 skipped |
+| SameBoy, CGB-E | 92 / 97, 5 skipped |
+| SameBoy, AGB | 93 / 97, 4 skipped |
+| TerminalGB, per-dot renderer | 93 / 97, 1 skipped |
+| TerminalGB, whole-scanline renderer | 85 / 97, 1 skipped |
+| Peanut-GB | 67 / 97, 1 skipped |
 <!-- /scoreboard -->
 
 Measured 2026-08-15 with `tools/scoreboard.sh`, which runs every row and writes
@@ -171,21 +171,21 @@ are the range the checks can tell apart.
 
 ## What it checks
 
-Eleven areas, 87 checks. The full list with explanations is
+Eleven areas, 97 checks. The full list with explanations is
 [`docs/CHECKS.md`](docs/CHECKS.md).
 
 | area | what it is about |
 |---|---|
 | `CPU` | instruction results and every flag, by model and by identity |
-| `CYC` | instruction and memory timing against the published cycle counts |
+| `CYC` | instruction and memory timing against the published cycle counts, and two checks that catch a **speed shortcut** — see below |
 | `TIM` | the divider and the timer, including the write that clocks the timer |
-| `INT` | the flags, `EI`'s delay, priority, the `HALT` defect, dispatch cost |
+| `INT` | the flags, `EI`'s delay and its latch, priority, the `HALT` defect, dispatch cost |
 | `MEM` | the memory map: echo RAM, high RAM, ROM writes, sizes |
-| `PPU` | display timing, and the **rendering fingerprint** — see below |
+| `PPU` | display timing, bus blocking, the object-memory defect, and the **rendering fingerprint** — see below |
 | `DMA` | the object transfer: what it copies and how long it takes |
 | `APU` | sound registers, the length counter, the converters |
 | `MBC` | banking, the bank-zero translation, cartridge RAM gating |
-| `BOOT` | the state the boot ROM handed over at `$0100` |
+| `BOOT` | the state the boot ROM handed over at `$0100`, including the divider |
 | `SER` | the link port's own registers and transfers |
 
 ### What it structurally cannot check
@@ -225,15 +225,47 @@ matter, because every result is the **difference** between two such edges and th
 unknown cancels. The floor is four dots, because a machine cycle is four dots and
 the processor cannot look between them.
 
+### Catching a shortcut, not just a mistake
+
+Most checks here look for something an emulator got wrong. Two look for something
+it deliberately left out, and those are harder, because a good shortcut is exactly
+one that keeps every total right.
+
+An emulator that advances its peripherals once per instruction — or lets the
+processor run a batch of them and advances everything afterwards — still runs every
+clock at the correct rate. The frame is still 70224 cycles, the timer still ticks at
+the documented rate, the interrupt is still delivered exactly once. Nothing measured
+over a *run* of instructions can see the difference, which is why suites do not
+catch it and why the emulators that do it can say so in their own documentation
+without ever failing anything.
+
+What gives it away is an observation that depends on **phase inside an instruction**
+rather than on a rate:
+
+- **`GB-CYC-07`** reads one register twice from the same starting phase, once with a
+  three-cycle instruction and once with a four-cycle one. The reads land on
+  different cycles of their own instructions, so over four one-cycle delays the
+  longer instruction must overtake the shorter exactly once. Advance per instruction
+  and both reads see the instruction's start, and it never overtakes.
+- **`GB-CYC-08`** lets the timer overflow inside a sled of `NOP`s and has the handler
+  read the return address off the stack, which names the instruction the interrupt
+  landed on. Entering the sled one cycle later must move that landing back by exactly
+  one instruction, eight times over. Deliver at a batch boundary and the landing
+  stops moving.
+
+Neither needs a reference, a host or a number measured from anything. They are the
+cartridge doing the one job no external suite can do for you: telling you what your
+speed cost.
+
 ## How long it takes
 
 Under **ten seconds** on a Game Boy, measured end to end, and the checks are not
 what costs it: the run waits on the display for 132 frames (2.2 s) and spends the
 rest shifting the report out of the link port, which on a Game Boy runs at 8192
-bits per second. The report prints its own cost on the last line but one:
+bits per second — 7.5 s for the 7,659 bytes of a passing DMG run. The report prints its own cost on the last line but one:
 
 ```
-cost 132 frames, sent 6927 B
+cost 132 frames, sent 7659 B
 ```
 
 A host that only wants the verdict can stop as soon as it sees `Passed` or `Failed`.

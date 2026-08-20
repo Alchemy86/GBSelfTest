@@ -27,7 +27,12 @@ MACRO glyph
     db (\5) << 3, (\6) << 3, (\7) << 3
 ENDM
 
-SECTION "FontData", ROM0
+; The glyphs themselves are 672 bytes of pure data with exactly one reader, so
+; they live in a switchable bank and LoadFont maps it -- the same arrangement
+; the coverage statement has had since the beginning. The fixed bank is where
+; everything that must be reachable from any bank lives, and it is nearly full;
+; a table nobody reads except at start-up has no business in it.
+SECTION "FontData", ROMX, BANK[1]
 
 FontData::
     ; $20 space
@@ -245,10 +250,19 @@ SECTION "FontCode", ROM0
 ; LoadFont — expand the 5x7 font into VRAM tiles at $8000, one tile per
 ; character, at tile id == ASCII code. Call with the LCD off.
 ;
+; A = the ROM bank that must be mapped when this returns. The glyphs are in
+; bank 1 and reaching them means switching, and a caller sitting in a
+; switchable bank would otherwise be returned into somebody else's code -- the
+; failure is not subtle, but it is silent until the machine wanders off.
+;
 ; Each glyph row becomes both bit planes of the tile row, so text is drawn in
 ; colour index 3 on index 0: black on white under the palette set below.
 ; ---------------------------------------------------------------------------
 LoadFont::
+    push af                 ; the caller's bank, restored on the way out
+    ld a, 1
+    ld [$2000], a
+
     ; Blank the whole of tile block 0 first, so an unprintable byte in the
     ; tilemap shows as an empty cell rather than as leftover VRAM.
     ;
@@ -293,4 +307,7 @@ LoadFont::
     xor a
     ldh [rSCX], a
     ldh [rSCY], a
+
+    pop af
+    ld [$2000], a
     ret

@@ -45,6 +45,50 @@ retype.
 - The failure list on screen carries **codes**, not titles: three bytes an entry in
   `wFailList` (area prefix pointer, then the number). Ten slots.
 
+## The fixed bank is full, and what may leave it
+
+`ROM0` holds the print code, the mapper checks (which cannot sit in a bank they
+switch away from), the vectors and the registry, and it is close to its 16 KiB.
+Two things have already moved out and the rule for moving a third is the same:
+
+- **A check's name and its one-line explanation may live in the area's own
+  bank.** `RunCheckList` maps the area's bank before the check runs and *leaves
+  it mapped through the reporting*, which is the rule that already lets a
+  failure note be a pointer into that bank. The CPU area's prose is in bank 1 on
+  exactly this licence. What may **not** move is an area's own name (printed
+  before the bank is mapped), its code prefix or its documentation page: the
+  prefix is read again at the very end of the run when the failure list is
+  spelled back out, and by then the bank is whatever the last area left.
+- **`FontData` is in bank 1**, so `LoadFont` takes `A` = the bank to restore on
+  the way out. Forget that and a caller in a switchable bank is returned into
+  somebody else's code — `GB-MEM-04` reloads the font mid-run and is the one
+  that finds it. The symptom is the run stopping dead with no message.
+
+## Measuring a timer edge: control the phase, or the run decides the verdict
+
+`GB-CYC-07` shipped once in a form that zeroed `TIMA` and *then* wrote `$FF04`.
+Three cycles separate those two writes, and whether the tapped bit falls inside
+them — and whether the `$FF04` write is itself a falling edge, which is
+`GB-TIM-06` — depends on the counter phase the check was entered in. That phase
+is set by how much code ran above it, so the verdict was decided by which checks
+failed earlier rather than by the machine: it passed on one emulator and failed
+on SameBoy, and swapping the earlier failures swapped the answer.
+
+**Restart the counter first and zero `TIMA` after it**, and sweep more than one
+delay rather than sampling once. Anything that reads a timer edge and does not do
+both is measuring the rest of the run.
+
+## SameBoy's boot ROMs here are SameBoy's own
+
+`tools/run-sameboy.sh` builds SameBoy's `BootROMs/`, which are open-source
+*re-implementations*, not Nintendo's. They reproduce the register state exactly
+and take their own number of cycles to get there, so anything whose value is a
+function of how long the boot ROM ran is not the silicon's figure: the system
+counter hands over `$BD` where hardware hands over `$AB`. `GB-BOOT-06`
+deliberately asserts only that the counter is not zero for this reason. Any
+future check tempted to assert a published boot constant should ask first
+whether it is a fact about the console or about the boot ROM.
+
 ## The brand
 
 `docs/brand/generate.py` is the only source of truth for the logo and icon. Edit

@@ -373,3 +373,50 @@ BodyIntOn:
     ldh [rIE], a
     ldh [rIF], a
     ret
+
+; ---------------------------------------------------------------------------
+; GB-INT-12 — a run of EI instructions still enables interrupts.
+;
+; GB-INT-02 pins that EI's effect is one instruction late and GB-INT-03 that it
+; then arrives. This asks the question that separates the two ways of building
+; that delay, and only one of them is the hardware's.
+;
+; EI sets a latch. It does not start a two-cycle countdown that the next EI
+; restarts: build it that way and a run of EI instructions re-arms the counter
+; every instruction and the master enable is NEVER reached, so a program that
+; wrote EI twice by accident -- or looped over one -- runs for ever with
+; interrupts off. Eighteen of them in a row is the shape the Mooneye suite uses
+; because eighteen is past any plausible counter width.
+;
+; The flag is raised by hand rather than by the timer, so nothing here waits on
+; a peripheral: the check is a statement about the processor alone.
+;
+; Source: TerminalGB docs/measured/timing.md, "EI's delay is a latch, not a
+; restartable counter" — `0xFB` seeds its delay only when the delay is
+; currently zero; pinned by Mooneye `acceptance/ei_sequence`.
+; ---------------------------------------------------------------------------
+ChkEiSequence::
+    call InstallRecorders
+    di
+    xor a
+    ldh [rTAC], a           ; the timer takes no part in this
+    ld a, IEF_TIMER
+    ldh [rIE], a
+    ldh [rIF], a
+    REPT 18
+    ei
+    ENDR
+    di
+    ld a, [I_SEEN]
+    cp 3
+    jr nz, .never
+    call RestoreHooks
+    or a
+    ret
+.never
+    ld b, 3
+    call SetNums8
+    call RestoreHooks
+    ld hl, .note
+    jp FailNote
+.note db "eighteen EI instructions in a row left interrupts disabled. EI arms a latch that the next instruction hands to the master enable; an EI that re-arms a countdown already running never lets it expire, and a program that writes EI twice then stops answering anything",0

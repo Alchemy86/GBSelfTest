@@ -70,11 +70,16 @@ Revisions measured: SameBoy \`$(ref run-sameboy.sh SAMEBOY_COMMIT)\`, TerminalGB
 \`$(ref run-peanut.sh PEANUT_REF)\`; the cartridge built with the RGBDS pinned in
 \`tools/fetch-rgbds.sh\`.
 
-A skip is not a pass, and it is not a failure either. On a Color console three
-checks step aside: one defect that exists only in the original silicon, one rule
-the cartridge has no second, independent way to measure there, and one handover
-state no published table covers for a monochrome cartridge in compatibility
-mode. Each of them prints its own reason in the run.
+A skip is not a pass, and it is not a failure either, and there are two kinds
+here. Two checks REPORT rather than judge, because no published reference
+settles what the right answer is: they print the number they saw and leave the
+verdict to a reader who has hardware. The rest are rules that do not apply to
+the console in the slot -- a defect that exists only in the original silicon, a
+rule the cartridge has no second independent way to measure on a Color machine,
+one handover state no published table covers for a monochrome cartridge in
+compatibility mode, and one question about the transfer's address bus that a
+monochrome console's memory map never raises. Each prints its own reason in the
+run, so a skipped row is never silent.
 EOF
 
 if [ "$WRITE" -eq 0 ]; then

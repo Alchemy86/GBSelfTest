@@ -72,6 +72,24 @@ ListCpu:
     check ChkHlIncDec,15,NmHlIncDec,ExHlIncDec
     dw 0
 
+; The CPU area's prose lives in the CPU area's own bank rather than in the
+; fixed one, and this is the only thing in this file that is not where a reader
+; would first look for it. The fixed bank is full: it has to hold the print
+; code, the mapper checks (which cannot be in a bank they switch away from) and
+; every table above, and there is not room for ninety-odd checks' worth of
+; sentences as well.
+;
+; It is safe because of the one rule `RunCheckList` states: the area's bank is
+; mapped before the check runs and is LEFT mapped through the reporting, which
+; is what lets a failure note be a pointer into that bank. A name and an
+; explanation are read in exactly the same window. What may NOT move is the
+; area's own name, its code prefix and its documentation page: the name is
+; printed before the bank is mapped, and the prefix is read again at the very
+; end of the run when the failure list is spelled back out, by which time the
+; bank is whatever the last area left behind.
+
+SECTION "RegistryTextCpu", ROMX, BANK[1]
+
 NmAdd:     db "ADD and ADC, against a counter-built adder",0
 ExAdd:     db "the sum or its flags disagree with the same addition counted out with INC HL",0
 NmSub:     db "SUB, SBC and CP",0
@@ -103,6 +121,9 @@ ExHlIncDec: db "LD [HL+] and its relatives must step the pointer after the acces
 NmDaa:     db "DAA against decimal arithmetic",0
 ExDaa:     db "the decimal adjust disagrees with the same sum done a digit at a time",0
 
+
+SECTION "Registry2", ROM0
+
 ; ---------------------------------------------------------------------------
 NmCyc:  db "CYC: instruction and memory timing",0
 PfxCyc: db "CYC",0
@@ -116,8 +137,11 @@ ListCyc:
     check ChkCycCb,    5, NmCycCb,    ExCyc
     check ChkCycMore,  6, NmCycMore,  ExCyc
     check ChkCycPhase, 7, NmCycPhase, ExCycPhase
+    check ChkCycLand,  8, NmCycLand,  ExCycLand
     dw 0
 
+NmCycLand:  db "an interrupt lands on the cycle it was raised",0
+ExCycLand:  db "running a batch of instructions and delivering at the end of it keeps every rate right and still fails this",0
 NmCycPhase: db "an access lands on its own cycle",0
 ExCycPhase: db "advancing the clocks once per instruction keeps every rate right and still fails this",0
 NmCycLoad:  db "loads and memory accesses",0
@@ -175,10 +199,13 @@ ListInt:
     check ChkReti,      9, NmReti,      ExReti
     check ChkIfCancel, 10, NmIfCancel,  ExIfCancel
     check ChkIeCancel, 11, NmIeCancel,  ExIeCancel
+    check ChkEiSequence,12,NmEiSeq,     ExEiSeq
     dw 0
 
 NmIfBits:   db "IF's top three bits read as one",0
 ExIfBits:   db "the three unimplemented bits of IF must read back set",0
+NmEiSeq:    db "a run of EI instructions still enables",0
+ExEiSeq:    db "EI arms a latch; an EI that restarts a countdown already running means the enable is never reached at all",0
 NmEiDelay:  db "EI is delayed and DI cancels it",0
 ExEiDelay:  db "an interrupt was taken between EI and the instruction after it",0
 NmEiTakes:  db "EI then NOP does take the interrupt",0
@@ -252,6 +279,9 @@ ListPpu:
     check ChkWindowOffScreen,17,NmWinOff,ExWinOff
     check ChkObjOffLeft,18, NmObjLeft,  ExObjLeft
     check ChkMode3Scy, 19, NmScyFree,   ExScyFree
+    check ChkVramWriteBlock,20,NmVramWr, ExVramWr
+    check ChkOamWriteBlock, 21,NmOamWr,  ExOamWr
+    check ChkOamBug,        22,NmOamBug, ExOamBug
     dw 0
 
 NmFrameLen:  db "a frame is 70224 cycles, measured against DIV",0
@@ -288,6 +318,12 @@ NmObjLeft:  db "an object off the left edge still costs",0
 ExObjLeft:  db "the scan finds it and its row is fetched; only the drawing is thrown away",0
 NmScyFree:  db "vertical scrolling costs the fetcher nothing",0
 ExScyFree:  db "only SCX discards fetched pixels; SCY just picks which row of the tile is read",0
+NmOamBug:    db "object memory corrupts, or does not, per console",0
+ExOamBug:    db "the increment unit drives the address bus with no access behind it, and the original silicon lets that reach the object scan",0
+NmVramWr:    db "a VRAM write during mode 3 is dropped",0
+ExVramWr:    db "the fetcher owns that bus while it draws, so the write never reaches the memory and the picture never shows it",0
+NmOamWr:     db "an OAM write during the scan is dropped",0
+ExOamWr:     db "the PPU owns object memory through modes 2 and 3, which is why every game moves its objects in the blank",0
 NmVramBlock: db "VRAM is unreadable during mode 3",0
 ExVramBlock: db "the CPU must read $FF from VRAM while the fetcher owns it",0
 NmOamBlock:  db "OAM is unreadable during modes 2 and 3",0
@@ -382,6 +418,7 @@ ListBoot:
     check ChkBootRegs, 3, NmBootRegs, ExBootRegs
     check ChkBootIo,   4, NmBootIo,   ExBootIo
     check ChkBootIf,   5, NmBootIf,   ExBootIf
+    check ChkBootDiv,  6, NmBootDiv,  ExBootDiv
     dw 0
 
 NmBootSp:   db "the stack pointer starts at $FFFE",0
@@ -390,6 +427,8 @@ NmBootA:    db "A identifies the console",0
 ExBootA:    db "A must be one of $01, $FF or $11 at handover; software has always used it to tell the machines apart",0
 NmBootRegs: db "the whole register set matches this console",0
 ExBootRegs: db "the boot ROM leaves a documented value in every register, and games read them",0
+NmBootDiv:  db "the divider is not zero at hand-over",0
+ExBootDiv:  db "the counter behind $FF04 has been running since power-on, and games seed their randomness from what it holds",0
 NmBootIf:   db "the boot ROM leaves its vertical blank pending",0
 ExBootIf:   db "IF reads $E1 at hand-over: the boot ROM waits for the screen before letting go",0
 NmBootIo:   db "unimplemented I/O reads back as ones",0

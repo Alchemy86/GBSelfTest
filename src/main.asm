@@ -98,6 +98,13 @@ Start:
     jr nz, .copyRegs
     ldh a, [rIF]
     ld [wBootIF], a
+    ; The divider is the one handover value that keeps moving while it is being
+    ; read, so it is taken here rather than later and GB-BOOT-06 allows for the
+    ; hundred-odd cycles of prologue above it. It is worth taking at all
+    ; because games seed their randomness from it: hand over a zeroed counter
+    ; and every launch of such a game plays out identically.
+    ldh a, [rDIV]
+    ld [wBootDiv], a
 
     ; ---- a known machine -------------------------------------------------
     di
@@ -105,6 +112,7 @@ Start:
     call LcdOff
     call ClearHooks
     call ClearWram
+    ld a, 1
     call LoadFont
     call ClearScreen
     call DetectConsole

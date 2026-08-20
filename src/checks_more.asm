@@ -660,3 +660,58 @@ ChkIeCancel::
     jp FailNote
 .noteTaken db "an interrupt was serviced whose enable bit had been cleared. IE is consulted at the moment of dispatch, not when the flag went up",0
 .noteLost  db "the flag was cleared even though the interrupt was never serviced. Only dispatch clears a flag; disabling an interrupt leaves its request standing for later",0
+
+SECTION "MoreBoot2", ROMX, BANK[3]
+
+; ---------------------------------------------------------------------------
+; GB-BOOT-06 — the divider is not zero at hand-over.
+;
+; The single most consequential number in the handover state, and the one an
+; emulator written without a boot ROM is most likely to leave at zero. There is
+; one sixteen-bit counter behind $FF04 and it has been running since the
+; console was switched on; by the time the boot ROM lets go it has counted
+; through the logo, the scroll and the chime.
+;
+; Games seed their randomness from it -- read $FF04 at the title screen and you
+; have a number that depends on how long a human took to press a button. Hand
+; over a zero and that number is the same every launch, which reaches a player
+; as "the shuffle is not random" and reaches a maintainer as anything but a
+; divider.
+;
+; WHAT THIS DOES NOT ASSERT, AND WHY. The exact value is documented per
+; console -- $ABCC on a Game Boy and a Pocket, $2678 on a Color, $267C on an
+; Advance, $1830 on the pre-release Game Boy, and on a Super Game Boy $D174
+; plus four cycles for every zero bit in the cartridge header, because its boot
+; ROM clocks that header to the SNES through an unbalanced loop. This check
+; asserts none of them, and that is deliberate: what the counter holds at $0100
+; is a property of the BOOT ROM, not of the console. Nintendo's is not
+; redistributable, so more than one emulator ships a re-implementation that
+; reproduces the register state exactly and takes its own number of cycles to
+; get there -- SameBoy is one, and hands over $BD where the silicon hands over
+; $AB. Asserting the published byte would be asserting which boot ROM was in
+; the slot, which is not a fact about the Game Boy, and this cartridge does not
+; check facts about its host.
+;
+; What every one of them agrees on, silicon and replacement alike, is that the
+; counter has been running. Zero is the answer given only by a machine that
+; never started it, and that is the one this catches.
+;
+; Source: TerminalGB docs/measured/boot.md, "The system counter does not start
+; at zero" -- "the single most consequential number here, because games seed
+; their RNG from DIV ... it is a value hardware never presents". The per-console
+; table there comes from the Mooneye `boot_div` ROMs, verified by their author
+; on real DMG, MGB and CGB units.
+; ---------------------------------------------------------------------------
+ChkBootDiv::
+    ld a, [wBootDiv]
+    or a
+    jr z, .zero
+    or a                    ; clear carry: the counter had been running
+    ret
+.zero
+    xor a
+    ld b, $AB
+    call SetNums8
+    ld hl, .noteZero
+    jp FailNote
+.noteZero db "the divider read zero at hand-over. The counter behind $FF04 has been running since power-on and every boot ROM leaves it somewhere: $AB on a Game Boy, $26 on a Color, $D1 on a Super Game Boy. Zero is what a machine hands over when it never started the counter at all, and a game seeding its randomness there plays the same game every launch",0

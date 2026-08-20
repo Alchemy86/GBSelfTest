@@ -169,12 +169,14 @@ ChkVramSize::
     ld a, h
     cp $A0
     jr nz, .read
-    call LoadFont           ; the report needs its glyphs back
+    ld a, 2                 ; the report needs its glyphs back, and this check
+    call LoadFont           ; is in bank 2, which LoadFont has to give back
     or a
     ret
 .bad
     ld b, d
     call SetNums8
+    ld a, 2
     call LoadFont
     ld hl, .note
     jp FailNote
