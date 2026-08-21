@@ -78,6 +78,25 @@ on SameBoy, and swapping the earlier failures swapped the answer.
 delay rather than sampling once. Anything that reads a timer edge and does not do
 both is measuring the rest of the run.
 
+## A hundred checks in one session is a shape no single test ROM has
+
+`GB-DMA-06` found a real bug in TerminalGB on the day it was written, and the
+bug was invisible to every public suite the emulator gates on — thousands of
+rows across Gambatte, Mooneye, Mealybug, SameSuite and the c-sp aggregation
+were byte-identical either way. It was a flag the PPU kept about a running
+object transfer, cleared on one of the two paths that can notice the transfer
+has ended and not the other; once it latched, the object scan never read object
+memory again for the rest of the run.
+
+A suite of short ROMs cannot see that. Each one boots, measures one thing and
+stops, so a latch that needs a transfer to end on an instruction boundary and a
+scan to follow it never gets the chance. This cartridge runs a hundred checks
+back to back on one machine, and that is the shape that catches it.
+
+**So when a check is written, run the whole cartridge and read the total, not
+just that check's line.** A new check that passes in isolation and moves an
+unrelated area's verdict has found something.
+
 ## SameBoy's boot ROMs here are SameBoy's own
 
 `tools/run-sameboy.sh` builds SameBoy's `BootROMs/`, which are open-source

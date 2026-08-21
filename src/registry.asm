@@ -340,8 +340,11 @@ ListDma:
     check ChkDmaReg,   3, NmDmaReg,   ExDmaReg
     check ChkDmaBus,   4, NmDmaBus,   ExDmaBus
     check ChkDmaA12,   5, NmDmaA12,   ExDmaA12
+    check ChkDmaScan,  6, NmDmaScan,  ExDmaScan
     dw 0
 
+NmDmaScan: db "a transfer stops the scan reading objects",0
+ExDmaScan: db "the controller drives the object address lines, so the scan reads none",0
 NmDmaA12:  db "where a work-RAM write lands during a transfer",0
 ExDmaA12:  db "reported rather than judged: no published reference documents this",0
 NmDmaBus:  db "the transfer shares the cartridge bus",0

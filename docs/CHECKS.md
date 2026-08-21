@@ -509,6 +509,12 @@ the transfer has no bus of its own, so a read on the bus it uses sees its byte.
 
 reported rather than judged: no published reference documents this.
 
+### GB-DMA-06
+
+**a transfer stops the scan reading objects**
+
+the controller drives the object address lines, so the scan reads none.
+
 ## APU: registers and the length counter
 
 ### GB-APU-01

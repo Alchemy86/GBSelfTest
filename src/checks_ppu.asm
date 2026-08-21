@@ -1653,3 +1653,181 @@ OamBugRun:
     jr nz, .count
     ld a, e
     ret
+
+; ---------------------------------------------------------------------------
+; GB-DMA-06 — an object transfer takes the object scan's bus away.
+;
+; The transfer controller has no address bus of its own either. GB-DMA-04
+; shows the DATA lines are shared with whatever else is on that bus; the
+; ADDRESS lines are shared too, and object memory is where that shows. While a
+; transfer runs the controller drives the object-memory address lines, and the
+; PPU is on the other end of them: for the eighty dots of the scan it cannot
+; read a single entry. Its Y and X latch keeps whatever it last held, and all
+; forty slots are judged against that one stale pair.
+;
+; A cartridge cannot see which objects were found. What it CAN see is how long
+; mode 3 took, and ten objects on a line cost the fetcher at least sixty dots
+; — GB-PPU-08 measures exactly that. So: leave object memory empty, put the
+; visible objects in the transfer's SOURCE, and start the transfer so that it
+; covers the measured line's scan. A machine whose scan reads object memory
+; straight through the transfer finds the ten the transfer has already written
+; and is still drawing; hardware finds none and is in horizontal blank.
+;
+; Object memory is left entirely empty on purpose, and that is what makes the
+; stale latch harmless: whatever slot the scan last managed to read, it read a
+; zero, so the frozen Y puts the phantom object above the screen. A check that
+; pre-loaded the objects would depend on where the freeze landed.
+;
+; The transfer is sourced from VIDEO memory, and that is not decoration. The
+; delay loop and the interrupt handler run from the cartridge, and on a
+; monochrome console work memory is on the cartridge's own bus — a transfer out
+; of it would feed the processor its own bytes instead of instructions, which
+; is why every game's transfer routine lives in high RAM. Video memory has a
+; bus of its own on every console, so no high-RAM routine is needed here.
+;
+; The processor is deliberately NOT halted while the transfer runs: whether a
+; halted transfer advances at all is its own question (Gambatte has ROMs for
+; it) and this check must not depend on the answer.
+; ---------------------------------------------------------------------------
+DEF DMA_SCAN_SRC    EQU $9F     ; the tail of the second map: never tile data,
+                                ; and no scene here selects that map
+DEF DMA_SCAN_MARGIN EQU 6       ; machine cycles past the empty-line edge
+
+ChkDmaScan::
+    call StatWorks
+    ld a, [wStatWorks]
+    or a
+    jp z, .noStat
+
+    ; where mode 3 ends with nothing on the line at all
+    call SceneBase
+    call ArmSled
+    call MeasureE3
+    ld [P_E3], a
+    call DisarmSled
+
+    ; and where it ends with ten objects genuinely in object memory. If this
+    ; machine charges nothing for an object at all -- GB-PPU-08 is the check
+    ; for that -- then the probe below cannot tell the two answers apart and a
+    ; pass here would mean nothing. Say so rather than claim one.
+    call LcdOff
+    call SetupObjects
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON | LCDCF_OBJON
+    ldh [rLCDC], a
+    call ArmSled
+    call MeasureE3
+    ld [P_SCENE], a
+    call DisarmSled
+    ld a, [P_E3]
+    ld b, a
+    ld a, [P_SCENE]
+    sub b
+    jr c, .noPenalty
+    cp DMA_SCAN_MARGIN + 2
+    jr c, .noPenalty
+
+    ; a page whose every byte is "an object on the measured line": Y and X both
+    ; become MEASURE_LINE + 16, which is on the line and on the screen. Object
+    ; memory is emptied again, so the ten the scan may find are the transfer's.
+    call LcdOff
+    call ClearObjects
+    ld hl, DMA_SCAN_SRC << 8
+    ld c, 160
+    ld a, MEASURE_LINE + 16
+.fill
+    ld [hl+], a
+    dec c
+    jr nz, .fill
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON | LCDCF_OBJON
+    ldh [rLCDC], a
+    call ArmSled
+
+    ld a, [P_E3]
+    add DMA_SCAN_MARGIN
+    call ProbeDmaScan
+    ld [P_SCENE], a
+    call DisarmSled
+    call SceneBase
+    ld a, [P_SCENE]
+    cp 3
+    jr z, .stillDrawing
+    or a
+    ret
+.stillDrawing
+    ld b, 0                 ; got mode 3, wanted mode 0
+    call SetNums8
+    ld hl, .noteDrawing
+    jp FailNote
+.noPenalty
+    ; the report carries what an object was worth here, because that number
+    ; is the reason the check could not run
+    ld b, DMA_SCAN_MARGIN + 2
+    call SetNums8
+    ld hl, .notePenalty
+    jp SkipWith
+.noStat
+    ld hl, .noteSkip
+    jp SkipWith
+.notePenalty db "not run: an object on the line did not lengthen mode 3 on this machine, so nothing here could tell whether the scan found the transfer's objects or not. GB-PPU-08 is the check that says so",0
+.noteDrawing db "mode 3 was still running past the point it ends on an empty line, so the ten objects the transfer had just written into object memory were found. The scan cannot read object memory while a transfer is running: the controller is driving those address lines and the PPU is on the other end of them",0
+.noteSkip    db "not run: the coincidence interrupt never fired",0
+
+; ProbeDmaScan — one sled probe at delay A, with an object transfer covering
+; the measured line's scan.
+;
+; The transfer is started early in the line BEFORE the measured one. It moves a
+; byte every machine cycle for 160 of them, which is more than a line and a
+; third, so it is running for the whole of the measured line's scan whatever
+; part of the previous line it began in.
+;
+; The wait is a spin rather than a halt for the reason in the header above. It
+; costs a couple of machine cycles of jitter against the halt the baseline was
+; measured with, which is an eighth of the margin either side.
+ProbeDmaScan:
+    ld b, a
+    ld a, SLED_MAX
+    sub b
+    ld e, a
+    ld d, 0
+    ld hl, SledStart
+    add hl, de
+    ld a, l
+    ld [wSledJump], a
+    ld a, h
+    ld [wSledJump + 1], a
+    ld a, $FF
+    ld [P_TMP], a
+    di
+    ; catch the start of the line before the measured one, so the transfer
+    ; begins at a known place rather than wherever the last check left us
+    ld b, MEASURE_LINE - 2
+    call WaitLine
+    ld b, MEASURE_LINE - 1
+    call WaitLine
+    xor a
+    ldh [rIF], a
+    ei
+    ld a, DMA_SCAN_SRC
+    ldh [rDMA], a
+.wait
+    ld a, [P_TMP]
+    inc a                   ; $FF, the "nothing yet" value, becomes zero
+    jr z, .wait
+    di
+    ld hl, wFrames
+    call IncWord
+    ld a, [P_TMP]
+    ret
+
+; WaitLine — spin until LY reads B, having first seen it read something else,
+; so the caller lands at the top of that line rather than part-way down one it
+; was already on.
+WaitLine:
+    ldh a, [rLY]
+    cp b
+    jr z, WaitLine
+.arrive
+    ldh a, [rLY]
+    cp b
+    jr nz, .arrive
+    ret
