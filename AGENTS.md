@@ -108,6 +108,44 @@ deliberately asserts only that the counter is not zero for this reason. Any
 future check tempted to assert a published boot constant should ask first
 whether it is a fact about the console or about the boot ROM.
 
+## Bank 3 is as tight as ROM0, and the linker's error names an arbitrary victim
+
+Adding one moderate check to bank 3 (PPU, DMA, APU, BOOT, SER) overflows the
+bank, and rgblink's `Unable to place "X" in bank $03` names whichever *later*
+section happened to lose the fitting race — trimming content and relinking
+made the named victim change (`MoreBoot2`, then `MoreSer`) with no reliable
+relationship to how close the fix was. Almost all of the added weight was
+`FailNote` string text, not code; keep a new bank-3 check's failure prose in
+the ~100-150 character range the shortest existing ones already use, and
+expect to iterate by shrinking and relinking rather than by computing a byte
+budget in advance.
+
+## A loosely-timed conflict check finds the drop, not the AND
+
+`GB-DMA-07`'s own comment states this, but it is worth repeating here: Pan
+Docs and Gambatte's own hwtest ROMs establish that a monochrome console's
+work-RAM-sourced OAM DMA conflict can be a bitwise AND of the primed and
+written bytes, given the exact cycle alignment Gambatte's `push` at a chosen
+`SP` produces. A cartridge check that primes a byte, starts the transfer and
+writes a plain store *sometime* during its 640 T-cycle window — the only kind
+of timing a self-test cartridge can produce without replicating that exact
+alignment — gets the write **dropped** (the primed byte survives) on every
+console, confirmed against SameBoy on every model it runs. `GB-DMA-07` checks
+that alignment-independent half only. Do not read a check that finds "dropped"
+rather than "ANDed" as contradicting the AND finding; it is testing a coarser
+question, honestly, rather than a finer one on weak evidence.
+
+## `tools/run-terminalgb.sh`'s pin will read as regressions it did not cause
+
+`TERMINALGB_REF` in that script is old enough to predate a fair amount of
+accuracy work on the other side (its own OAM-DMA bus-sharing model among it),
+so the scoreboard's TerminalGB rows will keep scoring below SameBoy's on
+checks a current TerminalGB build passes outright. That is the pin, not a
+finding about TerminalGB; re-pinning is a deliberate action (it moves every
+row in the scoreboard, not just the ones a given change touched) and should
+land as its own commit with a fresh `tools/scoreboard.sh --write` run, not as
+a side effect of adding a check.
+
 ## The brand
 
 `docs/brand/generate.py` is the only source of truth for the logo and icon. Edit
