@@ -1831,3 +1831,76 @@ WaitLine:
     cp b
     jr nz, .arrive
     ret
+
+; ---------------------------------------------------------------------------
+; GB-PPU-23 -- tile id $19 is unsigned-addressed to $8190, sixteen bytes past
+; tile $18 and sixteen before tile $1A.
+;
+; Every one of the nine Mealybug rows this cartridge's boot-VRAM checks are
+; aimed at identifies a tile by NUMBER -- an OAM entry naming tile $19, a BG
+; tilemap byte of $19 under unsigned ($8000) addressing -- and depends on
+; nothing but this arithmetic to turn that number into an address. This
+; proves the arithmetic and the independence of neighbouring tiles with a
+; pattern this cartridge draws itself; it asserts nothing about what
+; boot-ROM-supplied content, if any, a real console leaves at $8190 before
+; this cartridge's own code runs -- that is a different question, answered
+; separately (and only where it CAN be, from the cartridge's own header) by
+; GB-BOOT-07. See TerminalGB docs/mealybug.md Sec 8.6 for why the two are kept
+; apart.
+; ---------------------------------------------------------------------------
+ChkTileAddressing::
+    call LcdOff
+    ld hl, $8180            ; tile $18
+    ld b, $88
+    call FillTile16
+    ld hl, $8190            ; tile $19
+    ld b, $99
+    call FillTile16
+    ld hl, $81A0            ; tile $1A
+    ld b, $AA
+    call FillTile16
+
+    ld a, [$8180]
+    cp $88
+    jr nz, .bad18
+    ld a, [$818F]           ; tile $18's last byte -- not only its first
+    cp $88
+    jr nz, .bad18
+    ld a, [$8190]
+    cp $99
+    jr nz, .bad19
+    ld a, [$819F]
+    cp $99
+    jr nz, .bad19
+    ld a, [$81A0]
+    cp $AA
+    jr nz, .bad1a
+    or a
+    ret
+.bad18
+    ld b, $88
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.bad19
+    ld b, $99
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.bad1a
+    ld b, $AA
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.note db "tile id $19 did not read back as sixteen bytes of its own, sitting exactly between tiles $18 and $1A. Unsigned tile addressing is $8000 + 16*id; get the base or the stride wrong and $19 is not the address a tile of that number claims to be",0
+
+; FillTile16 -- HL = tile address, B = the byte to fill all sixteen bytes
+; with. Trashes A, C.
+FillTile16:
+    ld c, 16
+.next
+    ld a, b
+    ld [hl+], a
+    dec c
+    jr nz, .next
+    ret

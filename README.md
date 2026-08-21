@@ -5,17 +5,17 @@
 <p align="center">
   <a href="LICENSE"><img alt="licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue"></a>
   <a href="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml"><img alt="build" src="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml/badge.svg"></a>
-  <a href="docs/CHECKS.md"><img alt="98 checks" src="https://img.shields.io/badge/checks-98-9bbc0f"></a>
+  <a href="docs/CHECKS.md"><img alt="100 checks" src="https://img.shields.io/badge/checks-100-9bbc0f"></a>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/report-sameboy-dmg.png" alt="The report on screen: eleven areas, 97 of 98 checks with one skipped, Passed" width="480">
+  <img src="docs/screenshots/report-sameboy-dmg.png" alt="The report on screen: eleven areas, 99 of 100 checks with one skipped, Passed" width="480">
 </p>
 
 **Boot this on any emulator or on a real console, and it tells you what is broken
 and where to read about it.**
 
-One file. No host, no reference images, no setup: it runs 98 checks unattended and
+One file. No host, no reference images, no setup: it runs 100 checks unattended and
 reports the verdict twice over — as text on the screen, and as the same text out
 of the link port so a machine can read it with nobody watching.
 
@@ -27,7 +27,7 @@ link port carries the whole story, including the measured value, one line of
 hardware explanation, and the URL to read.
 
 <p align="center">
-  <img src="docs/screenshots/report-peanut.png" alt="A failing report: per-area FAILs, 67 of 98, then the failing codes and where to read about them" width="480">
+  <img src="docs/screenshots/report-peanut.png" alt="A failing report: per-area FAILs, 68 of 100, then the failing codes and where to read about them" width="480">
 </p>
 
 The same failure, as the link port sends it — verbatim, straight from the run that
@@ -90,8 +90,8 @@ GB-PPU-01 ok   a frame is 70224 cycles, measured against DIV
 GB-PPU-02 ok   a scanline is 456 cycles
 ...
 
-TOTAL 97/98 checks, 1 skipped
-cost 147 frames, sent 7717 B
+TOTAL 99/100 checks, 1 skipped
+cost 147 frames, sent 7856 B
 Passed
 ```
 
@@ -130,7 +130,7 @@ repository were wrong and were found that way, not by reasoning.
 
 ## The scoreboard
 
-The same cartridge, the same ninety-eight checks, two emulators:
+The same cartridge, the same hundred checks, two emulators:
 
 <table>
 <tr>
@@ -146,13 +146,13 @@ The same cartridge, the same ninety-eight checks, two emulators:
 <!-- scoreboard -->
 | implementation | result |
 |---|---:|
-| SameBoy, DMG | 97 / 98, 1 skipped |
-| SameBoy, MGB (Pocket) | 97 / 98, 1 skipped |
-| SameBoy, CGB-E | 93 / 98, 5 skipped |
-| SameBoy, AGB | 94 / 98, 4 skipped |
-| TerminalGB, per-dot renderer | 93 / 98, 1 skipped |
-| TerminalGB, whole-scanline renderer | 85 / 98, 2 skipped |
-| Peanut-GB | 67 / 98, 2 skipped |
+| SameBoy, DMG | 99 / 100, 1 skipped |
+| SameBoy, MGB (Pocket) | 99 / 100, 1 skipped |
+| SameBoy, CGB-E | 94 / 100, 6 skipped |
+| SameBoy, AGB | 95 / 100, 5 skipped |
+| TerminalGB, per-dot renderer | 94 / 100, 1 skipped |
+| TerminalGB, whole-scanline renderer | 86 / 100, 2 skipped |
+| Peanut-GB | 68 / 100, 2 skipped |
 <!-- /scoreboard -->
 
 Measured 2026-08-21 with `tools/scoreboard.sh`, which runs every row and writes
@@ -171,7 +171,7 @@ are the range the checks can tell apart.
 
 ## What it checks
 
-Eleven areas, 98 checks. The full list with explanations is
+Eleven areas, 100 checks. The full list with explanations is
 [`docs/CHECKS.md`](docs/CHECKS.md).
 
 | area | what it is about |

@@ -715,3 +715,157 @@ ChkBootDiv::
     ld hl, .noteZero
     jp FailNote
 .noteZero db "the divider read zero at hand-over. The counter behind $FF04 has been running since power-on and every boot ROM leaves it somewhere: $AB on a Game Boy, $26 on a Color, $D1 on a Super Game Boy. Zero is what a machine hands over when it never started the counter at all, and a game seeding its randomness there plays the same game every launch",0
+
+; This one's ENTRY lives in the fixed bank rather than bank 3 with the rest of
+; BOOT -- bank 3 was already full, and `RunCheckList` maps it before jumping
+; here regardless of where the routine actually lives. Its own working out is
+; heavier than a report string, so it borrows MEM's bank (2, which has room)
+; the way `ChkVramSize` borrows CPU's font bank through `LoadFont`: switch,
+; call, switch back to BOOT's own bank before returning, so the reporting
+; that follows still finds whatever it expects mapped. The two `FailNote`
+; strings stay in the fixed bank precisely because reporting happens AFTER
+; the switch-back -- a note pointer has to resolve under whatever bank ends
+; up mapped when it is finally printed, not whichever one computed it.
+SECTION "MoreBootLogo", ROM0
+
+; ---------------------------------------------------------------------------
+; GB-BOOT-07 -- the cartridge's own header logo decompresses into $8010-$818F.
+;
+; Every bootable cartridge carries a copy of this bitmap at $0104-$0133 --
+; hardware refuses to run one whose copy does not match, so it is present in
+; every ROM this cartridge has ever been tested against, this one included --
+; and the monochrome boot ROMs turn it into the 24 tiles at $8010-$818F by a
+; documented, public algorithm (Pan Docs, "0104-0133 -- Nintendo logo"): each
+; PAIR of header bytes is one tile, split into four nibbles (one nibble per
+; pair of output rows, MSB = the leftmost of the nibble's four source pixels),
+; each nibble horizontally doubled and written TWICE (vertical doubling) into
+; the tile's LOW bitplane only -- the high plane is left holding whatever VRAM
+; already read, which on a freshly cleared screen is zero.
+;
+; This recomputes that decompression from the header THIS CARTRIDGE ITSELF
+; carries and compares it against what the boot ROM actually left in VRAM,
+; captured at Start before a single other byte of VRAM was touched (see
+; main.asm, wram.inc). It is a fact about the cartridge's own bytes, checked a
+; second, independent way on the machine itself -- nothing here reads, embeds,
+; or depends on the boot ROM's own content, and nothing here asserts what a
+; Color console's differently-shaped boot sequence leaves behind, so it does
+; not run on one. The glyph at tile $19 is deliberately NOT part of this --
+; that content is boot-ROM-only, with nothing in the cartridge to derive it
+; from, and this cartridge neither reads it nor guesses at it. GB-PPU-23
+; checks what CAN be said about that tile without touching its content.
+;
+; Source: TerminalGB docs/mealybug.md Sec 8.6 records the same distinction and
+; the reasoning behind it; Pan Docs' "0104-0133 -- Nintendo logo" and
+; "Power-Up Sequence -- Monochrome models" give the algorithm in full.
+; ---------------------------------------------------------------------------
+ChkBootLogoTiles::
+    ld a, [wConsole]
+    cp CONSOLE_CGB
+    jr z, .skip
+    cp CONSOLE_AGB
+    jr z, .skip
+    cp CONSOLE_UNK
+    jr z, .skip
+
+    ld a, 2                 ; borrow MEM's bank, which has the room
+    ld [$2000], a
+    call BootLogoDecompress
+    push af
+    ld a, 3                 ; BOOT's own bank, mapped through the reporting
+    ld [$2000], a
+    pop af
+    ret nc
+    ld hl, .note
+    jp FailNote
+.skip
+    ld hl, .noteSkip
+    jp SkipWith
+.note db "video RAM did not hold the tile this cartridge's own header decompresses to. Either the boot ROM did not do the documented unpack, or something wrote to $8010-$818F before this cartridge's own snapshot could reach it",0
+.noteSkip db "not run: a Color console's boot ROM decompresses the header logo by a differently-shaped sequence this cartridge does not have a documented, public description of -- see docs/mealybug.md Sec 8.6",0
+
+; ---------------------------------------------------------------------------
+; The decompression itself, and its table, live in MEM's bank (2) -- the part
+; ChkBootLogoTiles above borrows it for. Nothing here calls FailNote/SkipWith
+; (their string pointers would not survive the switch back); a mismatch is
+; reported through SetNums8 (numbers only, no pointer) and a plain carry flag,
+; which the fixed-bank entry point above turns into a report once its own
+; bank is back.
+; ---------------------------------------------------------------------------
+SECTION "BootLogoDecompress", ROMX, BANK[2]
+
+; BootLogoDecompress -- recompute the header-logo decompression fresh from
+; this cartridge's own $0104-$0133 and compare it against the snapshot
+; GB-BOOT-07 captured at hand-over (wBootLogoTiles). Carry clear on a full
+; match; carry set, with A/B loaded for SetNums8, on the first mismatch.
+BootLogoDecompress:
+    ld hl, $0104            ; the header: fixed bank 0, reachable whatever is
+                            ; mapped at $4000-$7FFF
+    ld de, wBootLogoTiles
+    ld a, 48                ; header bytes -- two per tile, 24 tiles
+    ld [wScratch], a
+.byte
+    ld a, [hl+]
+    ld [wScratch + 1], a    ; this byte's two nibbles, held across the calls
+                            ; below (which do not touch wScratch)
+    swap a
+    and $0F
+    call DoubleAndCheckRowPair
+    ret c
+    ld a, [wScratch + 1]
+    and $0F
+    call DoubleAndCheckRowPair
+    ret c
+    ld a, [wScratch]
+    dec a
+    ld [wScratch], a
+    jr nz, .byte
+    or a
+    ret
+
+DoubleNibbleTable:
+    db $00, $03, $0C, $0F, $30, $33, $3C, $3F, $C0, $C3, $CC, $CF, $F0, $F3, $FC, $FF
+
+; DoubleAndCheckRowPair -- A = a 4-bit nibble (top nibble already masked to
+; zero). Doubles it (the "chunky pixel" horizontal doubling every monochrome
+; boot ROM applies to the header logo) and compares the result against
+; [DE..DE+3], which must read (doubled, 0, doubled, 0) -- TWO tile rows, low
+; and high bitplane each, because vertical doubling writes the same doubled
+; byte to both. Leaves DE advanced four bytes past them either way. Returns
+; carry set and A/B loaded for SetNums8 on the first mismatch; HL (the
+; caller's header pointer) is preserved.
+DoubleAndCheckRowPair:
+    ld c, a
+    ld b, 0
+    push hl
+    ld hl, DoubleNibbleTable
+    add hl, bc
+    ld a, [hl]
+    pop hl
+    ld c, a                 ; C = the wanted low-plane byte, both rows
+    ld a, [de]
+    cp c
+    jr nz, .lowBad
+    inc de
+    ld a, [de]
+    inc de
+    or a
+    jr nz, .highBad
+    ld a, [de]
+    cp c
+    jr nz, .lowBad
+    inc de
+    ld a, [de]
+    inc de
+    or a
+    ret z                   ; both rows' high planes are zero, as they must
+                            ; be -- pass
+.highBad
+    ld b, 0
+    call SetNums8
+    scf
+    ret
+.lowBad
+    ld b, c
+    call SetNums8
+    scf
+    ret

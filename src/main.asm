@@ -110,6 +110,17 @@ Start:
     di
     ld sp, $DFFF
     call LcdOff
+    ; LcdOff has just waited for VBlank and switched the LCD off, so VRAM is
+    ; freely readable and nothing has touched a byte of it since hand-over --
+    ; this is the LAST point before ClearHooks/ClearWram/LoadFont/ClearScreen
+    ; start overwriting it with this cartridge's own content. Snapshot the
+    ; boot ROM's own logo tiles here so GB-BOOT-07 can check them later,
+    ; against a decompression of this cartridge's own header run fresh at
+    ; check time -- see wram.inc for what is and is not captured.
+    ld hl, $8010
+    ld de, wBootLogoTiles
+    ld bc, $8190 - $8010
+    call CopyBlock
     call ClearHooks
     call ClearWram
     ld a, 1
@@ -150,6 +161,23 @@ ClearWram:
 .next
     xor a
     ld [hl+], a
+    dec bc
+    ld a, b
+    or c
+    jr nz, .next
+    ret
+
+; ---------------------------------------------------------------------------
+; CopyBlock -- HL = source, DE = destination, BC = length. Trashes A.
+; ---------------------------------------------------------------------------
+CopyBlock:
+    ld a, b
+    or c
+    ret z
+.next
+    ld a, [hl+]
+    ld [de], a
+    inc de
     dec bc
     ld a, b
     or c

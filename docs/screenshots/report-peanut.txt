@@ -134,6 +134,7 @@ GB-PPU-22 FAIL object memory corrupts, or does not, per console
       got $0000  want $0001
       -> not one byte of object memory changed. On this console the increment unit's operand reaches the bus the object scan is using, and a sixteen-bit increment through $FE00-$FEFF during mode 2 corrupts a row of it. Hooking the read and the write paths and stopping there is the usual way to miss this: no read and no write is involved
       -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-ppu-22
+GB-PPU-23 ok   tile id $19 is unsigned-addressed to $8190
 --- DMA: the object transfer
 GB-DMA-01 ok   the transfer copies 160 bytes
 GB-DMA-02 FAIL the transfer is not instantaneous
@@ -192,6 +193,10 @@ GB-BOOT-04 FAIL unimplemented I/O reads back as ones
       -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-boot-04
 GB-BOOT-05 ok   the boot ROM leaves its vertical blank pending
 GB-BOOT-06 ok   the divider is not zero at hand-over
+GB-BOOT-07 FAIL the cartridge's own header logo decompresses into $8010-$818F
+      got $0000  want $00F0
+      -> video RAM did not hold the tile this cartridge's own header decompresses to. Either the boot ROM did not do the documented unpack, or something wrote to $8010-$818F before this cartridge's own snapshot could reach it
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-boot-07
 --- SER: the link port
 GB-SER-01 ok   SB is a plain read/write register
 GB-SER-02 FAIL SC's unused bits read as ones
@@ -234,6 +239,6 @@ This is a first-response cartridge: broad, fast, self-explaining, and
 one file. It is not a replacement for any of the above.
 
 
-TOTAL 67/98 checks, 2 skipped
-cost 147 frames, sent 16733 B
+TOTAL 68/100 checks, 2 skipped
+cost 147 frames, sent 17218 B
 Failed

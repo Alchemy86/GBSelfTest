@@ -81,6 +81,7 @@ GB-PPU-19 ok   vertical scrolling costs the fetcher nothing
 GB-PPU-20 ok   a VRAM write during mode 3 is dropped
 GB-PPU-21 ok   an OAM write during the scan is dropped
 GB-PPU-22 ok   object memory corrupts, or does not, per console
+GB-PPU-23 ok   tile id $19 is unsigned-addressed to $8190
 --- DMA: the object transfer
 GB-DMA-01 ok   the transfer copies 160 bytes
 GB-DMA-02 ok   the transfer is not instantaneous
@@ -110,6 +111,7 @@ GB-BOOT-03 ok   the whole register set matches this console
 GB-BOOT-04 ok   unimplemented I/O reads back as ones
 GB-BOOT-05 ok   the boot ROM leaves its vertical blank pending
 GB-BOOT-06 ok   the divider is not zero at hand-over
+GB-BOOT-07 ok   the cartridge's own header logo decompresses into $8010-$818F
 --- SER: the link port
 GB-SER-01 ok   SB is a plain read/write register
 GB-SER-02 ok   SC's unused bits read as ones
@@ -149,6 +151,6 @@ This is a first-response cartridge: broad, fast, self-explaining, and
 one file. It is not a replacement for any of the above.
 
 
-TOTAL 97/98 checks, 1 skipped
-cost 147 frames, sent 7717 B
+TOTAL 99/100 checks, 1 skipped
+cost 147 frames, sent 7856 B
 Passed

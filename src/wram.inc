@@ -32,6 +32,17 @@ DEF BOOT_D EQU wBootRegs + 5
 DEF BOOT_L EQU wBootRegs + 6
 DEF BOOT_H EQU wBootRegs + 7
 
+; The boot ROM's own logo tiles, captured before this cartridge's own startup
+; (ClearWram/LoadFont/ClearScreen) can overwrite a byte of VRAM -- it lives
+; here, beside the rest of the handover state, for the same reason: ClearWram
+; clears everything from wTextBuf down and stops before this. $8010-$818F,
+; tiles $01-$18, 384 bytes. GB-BOOT-07 checks it against a decompression of
+; this cartridge's own header run fresh at check time. Deliberately NOT
+; tile $19 (the ® glyph): that content is boot-ROM-only and this cartridge
+; neither derives it nor guesses at it -- see GB-PPU-23 for what IS checked
+; about that tile.
+DEF wBootLogoTiles RB 24 * 16
+
 ; --- one hook per interrupt vector, so a check can borrow a vector and give
 ; it back afterwards.
 DEF wHookVBlank RW 1

@@ -282,6 +282,7 @@ ListPpu:
     check ChkVramWriteBlock,20,NmVramWr, ExVramWr
     check ChkOamWriteBlock, 21,NmOamWr,  ExOamWr
     check ChkOamBug,        22,NmOamBug, ExOamBug
+    check ChkTileAddressing,23,NmTileAddr,ExTileAddr
     dw 0
 
 NmFrameLen:  db "a frame is 70224 cycles, measured against DIV",0
@@ -320,6 +321,8 @@ NmScyFree:  db "vertical scrolling costs the fetcher nothing",0
 ExScyFree:  db "only SCX discards fetched pixels; SCY just picks which row of the tile is read",0
 NmOamBug:    db "object memory corrupts, or does not, per console",0
 ExOamBug:    db "the increment unit drives the address bus with no access behind it, and the original silicon lets that reach the object scan",0
+NmTileAddr:  db "tile id $19 is unsigned-addressed to $8190",0
+ExTileAddr:  db "unsigned tile addressing is $8000 + 16*id; a wrong base or stride is invisible until a tile is identified by number, which every OAM entry and every unsigned BG tilemap byte does",0
 NmVramWr:    db "a VRAM write during mode 3 is dropped",0
 ExVramWr:    db "the fetcher owns that bus while it draws, so the write never reaches the memory and the picture never shows it",0
 NmOamWr:     db "an OAM write during the scan is dropped",0
@@ -422,6 +425,7 @@ ListBoot:
     check ChkBootIo,   4, NmBootIo,   ExBootIo
     check ChkBootIf,   5, NmBootIf,   ExBootIf
     check ChkBootDiv,  6, NmBootDiv,  ExBootDiv
+    check ChkBootLogoTiles,7,NmBootLogo,ExBootLogo
     dw 0
 
 NmBootSp:   db "the stack pointer starts at $FFFE",0
@@ -436,6 +440,8 @@ NmBootIf:   db "the boot ROM leaves its vertical blank pending",0
 ExBootIf:   db "IF reads $E1 at hand-over: the boot ROM waits for the screen before letting go",0
 NmBootIo:   db "unimplemented I/O reads back as ones",0
 ExBootIo:   db "an address with no register behind it must read $FF, not $00",0
+NmBootLogo: db "the cartridge's own header logo decompresses into $8010-$818F",0
+ExBootLogo: db "the monochrome boot ROMs unpack the header's Nintendo-logo bitmap into 24 tiles by a documented algorithm; this recomputes it from the cartridge's own header and checks it against what was actually left in VRAM",0
 
 ; ---------------------------------------------------------------------------
 NmSer:  db "SER: the link port",0
