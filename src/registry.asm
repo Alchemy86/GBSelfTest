@@ -344,12 +344,15 @@ ListDma:
     check ChkDmaBus,   4, NmDmaBus,   ExDmaBus
     check ChkDmaA12,   5, NmDmaA12,   ExDmaA12
     check ChkDmaScan,  6, NmDmaScan,  ExDmaScan
+    check ChkDmaWram,  7, NmDmaWram,  ExDmaWram
     dw 0
 
 NmDmaScan: db "a transfer stops the scan reading objects",0
 ExDmaScan: db "the controller drives the object address lines, so the scan reads none",0
-NmDmaA12:  db "where a work-RAM write lands during a transfer",0
-ExDmaA12:  db "reported rather than judged: no published reference documents this",0
+NmDmaA12:  db "an OAM DMA transfer overrides address bit 12 of a work-RAM access",0
+ExDmaA12:  db "on a Color console, $C000 and $D000 can trade places while the transfer's source has that bit set",0
+NmDmaWram: db "a write into the transfer's own source page does not land",0
+ExDmaWram: db "a work-RAM-sourced transfer's own bus answers with its own byte, not the processor's, on any console",0
 NmDmaBus:  db "the transfer shares the cartridge bus",0
 ExDmaBus:  db "the transfer has no bus of its own, so a read on the bus it uses sees its byte",0
 NmDmaCopy: db "the transfer copies 160 bytes",0

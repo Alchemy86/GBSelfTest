@@ -24,6 +24,7 @@ hDmaSeen::  db
 hDmaBus::   ds 32
 hDmaSaw::   ds 3
 hDmaA12::   ds 24
+hDmaWram::  ds 16
 
 SECTION "DmaCode", ROMX, BANK[3]
 
@@ -96,10 +97,29 @@ DmaA12Src:
     ret
 DmaA12End:
 
+; A transfer sourced from work RAM itself, conflicting with a write into the
+; very page it is reading. See GB-DMA-07.
+DmaWramSrc:
+    ldh [rDMA], a
+    ld a, $55
+    ld [$D000], a
+    ld a, 45
+.wait
+    dec a
+    jr nz, .wait
+    ret
+DmaWramEnd:
+
 InstallDmaA12:
     ld hl, DmaA12Src
     ld de, hDmaA12
     ld b, DmaA12End - DmaA12Src
+    jr InstallDma.copy
+
+InstallDmaWram:
+    ld hl, DmaWramSrc
+    ld de, hDmaWram
+    ld b, DmaWramEnd - DmaWramSrc
     jr InstallDma.copy
 
 InstallDmaBus:
@@ -716,24 +736,32 @@ DmaRamp::
     ENDR
 
 ; ---------------------------------------------------------------------------
-; GB-DMA-05 — where a work-RAM write lands while a transfer runs. REPORTED.
+; GB-DMA-05 — an OAM DMA transfer overrides address bit 12 of a work-RAM
+; access.
 ;
-; The data lines are shared (GB-DMA-04). The *address* lines appear to be
-; shared as well: on a Color console, while a transfer runs out of the
-; cartridge, a processor write to $C000-$DFFF seems to take address line 12
-; from the page the transfer is driving rather than from the processor. Write
-; to $C000 during a transfer sourced from page $70 and the byte turns up at
-; $D000.
+; The data lines are shared (GB-DMA-04). The address lines are shared too: on
+; a Color console, while a transfer runs out of a page on the EXTERNAL bus
+; (the cartridge, or video memory), a processor access to $C000-$DFFF has bit
+; 12 of its own address replaced by bit 12 of the address the transfer is
+; driving. Bits 0-11 stay the processor's, and SVBK still decides which bank
+; answers at $D000 -- only which HALF of the window answers moves.
 ;
-; No published reference documents this, so this check does not judge it: it
-; performs the experiment and prints where the byte went. That is the thing a
-; cartridge can do that a wiki cannot, and it is why the emulator this check
-; ships alongside deliberately did not "fix" its behaviour to match a test.
+; So a write meant for $C000, made while a transfer is sourced from a page
+; whose bit 12 is set, lands at $D000 instead. This check writes $5A to
+; $C000 during a transfer out of page $70 (address $7000, bit 12 set) and
+; reads both halves back: an unaffected address bus leaves $C000 = $5A and
+; $D000 untouched; a shared one leaves $C000 untouched and $D000 = $5A.
 ;
-; A Color console only, because work RAM there has a bus of its own. On a
-; monochrome console work RAM is on the same bus as the cartridge, so a write
-; during the transfer is an ordinary bus conflict and the question does not
-; arise.
+; This used to be reported rather than judged, because no published reference
+; documented it. It is documented now: derived from a probe cartridge run
+; through TerminalGB's own emulator and through SameBoy side by side, and the
+; two independent implementations agree (TerminalGB,
+; docs/measured/oam-dma-work-ram.md).
+;
+; A Color console only, because work RAM on a monochrome console is on the
+; SAME bus as the cartridge, so a write during the transfer is an ordinary
+; bus conflict (GB-DMA-04) and this address question does not arise there.
+; See GB-DMA-07 for the ordinary conflict that DOES arise there instead.
 ; ---------------------------------------------------------------------------
 ChkDmaA12::
     ld a, [wConsole]
@@ -753,14 +781,62 @@ ChkDmaA12::
     ld a, $70               ; a cartridge page with address line 12 set
     call hDmaA12
 
-    ld a, [$C000]           ; high byte is $C000, low is $D000
+    ld a, [$C000]           ; D = what $C000 holds, E = what $D000 holds
     ld d, a
     ld a, [$D000]
     ld e, a
-    ld hl, $5A00            ; what an unshared address bus would leave
+    ld a, e
+    cp $5A                  ; the write, redirected, landing at $D000
+    jr nz, .bad
+    ld a, d
+    or a                    ; and nothing landing where it was addressed
+    jr nz, .bad
+    or a
+    ret
+.bad
+    ld hl, $005A            ; want: $C000 = $00, $D000 = $5A
     call SetNums16
-    ld hl, .noteReport
-    jp SkipWith
+    ld hl, .note
+    jp FailNote
 
-.noteMono   db "work RAM shares the cartridge bus on this console, so a write during the transfer is an ordinary bus conflict and there is no address question to ask",0
-.noteReport db "reported, not judged. $5A was written to $C000 while a transfer ran out of page $70. The pair shown is what $C000 and $D000 held afterwards; an unshared address bus leaves $5A and $00. If it reads $00 and $5A the write went to $D000, which means address line 12 came from the transfer and not from the processor",0
+.noteMono db "work RAM shares the cartridge bus on this console, so a write during the transfer is an ordinary bus conflict and there is no address question to ask",0
+.note     db "the byte from $C000 did not turn up alone at $D000. A work-RAM access made while the source has bit 12 set should take that bit from the transfer, landing the write at $D000 instead",0
+
+; ---------------------------------------------------------------------------
+; GB-DMA-07 — a write that conflicts with the transfer's OWN source bus does
+; not land, on any console.
+;
+; GB-DMA-04 shows a transfer sourced from the cartridge shares that bus with
+; the processor, and every DMA routine is copied to high RAM before it runs
+; because work RAM sits on the SAME bus as the cartridge on a DMG or Pocket.
+; Source a transfer from work RAM itself and the same rule applies to the
+; transfer's own source: whichever byte the controller is driving onto that
+; bus is what answers a processor access sharing the cycle, not the byte the
+; processor asked to write.
+;
+; This reuses GB-DMA-01's own known page ($D000 = $40, the first byte
+; PrepareDmaSource writes) as the transfer's source, rather than priming a
+; page of its own, so the write is checked against exactly one known byte.
+;
+; A finer question -- whether the byte that lands on a monochrome console is
+; the primed byte untouched or a bitwise mix of it with what was written --
+; needs cycle-exact alignment with the transfer's own counter that this
+; check does not attempt; TerminalGB and SameBoy agree, independently, that
+; the primed byte survives at this granularity (TerminalGB,
+; docs/measured/oam-dma-work-ram.md, which cites Gambatte's own hwtest ROMs).
+; ---------------------------------------------------------------------------
+ChkDmaWram::
+    call LcdOff
+    call PrepareDmaSource   ; $D000 = $40, the same known page GB-DMA-01 uses
+    call InstallDmaWram
+    di
+    ld a, $D0               ; work RAM itself is the transfer's own source
+    call hDmaWram
+    ld a, [$D000]
+    cp $40
+    ret z
+    ld b, $40
+    call SetNums8
+    ld hl, .note
+    jp FailNote
+.note db "$40 was primed at $D000, a page a work-RAM-sourced transfer was reading, and $55 written there while the transfer ran. The write should not have landed",0

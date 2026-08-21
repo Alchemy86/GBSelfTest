@@ -8,13 +8,13 @@ every runner fetches and pins its own emulator, and none of them is vendored her
 <!-- table -->
 | implementation | result |
 |---|---:|
-| SameBoy, DMG | 99 / 100, 1 skipped |
-| SameBoy, MGB (Pocket) | 99 / 100, 1 skipped |
-| SameBoy, CGB-E | 94 / 100, 6 skipped |
-| SameBoy, AGB | 95 / 100, 5 skipped |
-| TerminalGB, per-dot renderer | 94 / 100, 1 skipped |
-| TerminalGB, whole-scanline renderer | 86 / 100, 2 skipped |
-| Peanut-GB | 68 / 100, 2 skipped |
+| SameBoy, DMG | 100 / 101, 1 skipped |
+| SameBoy, MGB (Pocket) | 100 / 101, 1 skipped |
+| SameBoy, CGB-E | 96 / 101, 5 skipped |
+| SameBoy, AGB | 97 / 101, 4 skipped |
+| TerminalGB, per-dot renderer | 94 / 101, 1 skipped |
+| TerminalGB, whole-scanline renderer | 86 / 101, 2 skipped |
+| Peanut-GB | 68 / 101, 2 skipped |
 <!-- /table -->
 
 Revisions measured: SameBoy `213a12c`, TerminalGB

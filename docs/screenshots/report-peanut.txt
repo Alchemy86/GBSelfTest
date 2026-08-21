@@ -145,11 +145,15 @@ GB-DMA-03 ok   $FF46 reads back the page written
 GB-DMA-04 FAIL the transfer shares the cartridge bus
       -> three reads of one fixed cartridge address, taken while a transfer sourced from the cartridge was running, all returned that address's own byte. The transfer controller has no bus of its own: it drives the source address onto the cartridge bus, so a read on that bus during the transfer sees the byte the transfer is moving
       -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-dma-04
-GB-DMA-05 skip where a work-RAM write lands during a transfer
+GB-DMA-05 skip an OAM DMA transfer overrides address bit 12 of a work-RAM access
       -> work RAM shares the cartridge bus on this console, so a write during the transfer is an ordinary bus conflict and there is no address question to ask
 GB-DMA-06 skip a transfer stops the scan reading objects
       saw 0000  against 0008
       -> not run: an object on the line did not lengthen mode 3 on this machine, so nothing here could tell whether the scan found the transfer's objects or not. GB-PPU-08 is the check that says so
+GB-DMA-07 FAIL a write into the transfer's own source page does not land
+      got $0055  want $0040
+      -> $40 was primed at $D000, a page a work-RAM-sourced transfer was reading, and $55 written there while the transfer ran. The write should not have landed
+      -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-dma-07
 --- APU: registers and the length counter
 GB-APU-01 FAIL every register reads back its documented bits
       got $00FF  want $0080
@@ -239,6 +243,6 @@ This is a first-response cartridge: broad, fast, self-explaining, and
 one file. It is not a replacement for any of the above.
 
 
-TOTAL 68/100 checks, 2 skipped
-cost 147 frames, sent 17218 B
+TOTAL 68/101 checks, 2 skipped
+cost 147 frames, sent 17591 B
 Failed

@@ -87,9 +87,10 @@ GB-DMA-01 ok   the transfer copies 160 bytes
 GB-DMA-02 ok   the transfer is not instantaneous
 GB-DMA-03 ok   $FF46 reads back the page written
 GB-DMA-04 ok   the transfer shares the cartridge bus
-GB-DMA-05 skip where a work-RAM write lands during a transfer
+GB-DMA-05 skip an OAM DMA transfer overrides address bit 12 of a work-RAM access
       -> work RAM shares the cartridge bus on this console, so a write during the transfer is an ordinary bus conflict and there is no address question to ask
 GB-DMA-06 ok   a transfer stops the scan reading objects
+GB-DMA-07 ok   a write into the transfer's own source page does not land
 --- APU: registers and the length counter
 GB-APU-01 ok   every register reads back its documented bits
 GB-APU-02 ok   powering off clears the registers and locks them
@@ -151,6 +152,6 @@ This is a first-response cartridge: broad, fast, self-explaining, and
 one file. It is not a replacement for any of the above.
 
 
-TOTAL 99/100 checks, 1 skipped
-cost 147 frames, sent 7856 B
+TOTAL 100/101 checks, 1 skipped
+cost 147 frames, sent 7950 B
 Passed
