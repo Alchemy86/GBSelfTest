@@ -46,7 +46,13 @@ LINKFLAGS := -n $(SYM) -m $(MAP)
 # here should ever leave a save file beside the ROM.
 #   -m 0x02  MBC1 + RAM          -r 0x02  8 KiB of cartridge RAM
 #   -p 0xFF  pad byte            -j -v    fix both header checksums
-FIXFLAGS := -m 0x02 -r 0x02 -p 0xFF -t $(TITLE) -j -v
+#   -c       CGB-enhanced but DMG/MGB-compatible ($80 at $0143). Without this,
+#             a real Color console runs the cartridge in DMG compatibility
+#             mode, where KEY1 and double speed do not exist at all (Pan Docs,
+#             "CGB Registers": KEY1 is "CGB Mode only") -- every double-speed
+#             check would silently skip on real hardware. -C (CGB-only) is
+#             deliberately not used: the DMG and MGB checks still need to run.
+FIXFLAGS := -m 0x02 -r 0x02 -p 0xFF -c -t $(TITLE) -j -v
 
 .PHONY: all clean check
 

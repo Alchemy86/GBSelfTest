@@ -1014,3 +1014,59 @@ LandIsr:
     ldh [rTAC], a
     pop hl
     reti
+
+; ---------------------------------------------------------------------------
+; GB-CYC-09 — double speed engages, and it does not change how many machine
+; cycles anything costs.
+;
+; rKEY1 is defined in hardware.inc and, until now, never read or written
+; anywhere in this cartridge. Two things about it are testable without a
+; screen: bit 7 has to flip when the documented STOP sequence (Pan Docs,
+; "KEY1 Register") is carried out, and once it has, a batch of instructions
+; timed against TIMA the way every other check in this file times one has to
+; cost the SAME number of timer ticks as it did before -- "Timer and Divider
+; Registers" are on the list of things Pan Docs documents as running at
+; double speed too, so the CPU and the clock this file measures it against
+; speed up together. (What does NOT speed up is the PPU's own dot clock;
+; GB-PPU's double-speed check is the one built on that half of the fact.)
+; ---------------------------------------------------------------------------
+ChkDoubleSpeedCyc::
+    ld a, [wConsole]
+    cp CONSOLE_CGB
+    jr z, .go
+    cp CONSOLE_AGB
+    jr z, .go
+    ld hl, .noteMono
+    jp SkipWith
+.go
+    ldh a, [rKEY1]
+    and $80
+    jr nz, .alreadyDouble
+    ld hl, BodyNop
+    call RunTimed
+    ld b, a                 ; the single-speed count
+    call FlipSpeed
+    ldh a, [rKEY1]
+    and $80
+    jr z, .noEngage
+    ld hl, BodyNop
+    call RunTimed
+    ld c, a                 ; the double-speed count, saved before flipping back
+    call FlipSpeed
+    ld a, c
+    cp b
+    ret z
+    call SetNums8
+    ld hl, .noteCount
+    jp FailNote
+.noEngage
+    call FlipSpeed           ; leave the CPU single-speed regardless
+    ld hl, .noteEngage
+    jp FailNote
+.alreadyDouble
+    ld hl, .noteAlready
+    jp SkipWith
+.noteMono    db "not run: KEY1 does not exist below Color hardware",0
+.noteAlready db "not run: KEY1 already reported double speed before this check touched it",0
+.noteEngage  db "STOP with KEY1 bit 0 set did not switch to double speed: bit 7 still read single afterwards",0
+.noteCount   db "sixty-four NOPs cost a different number of timer ticks in double speed; the timer speeds up with the CPU, so the count must not change",0

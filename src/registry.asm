@@ -122,7 +122,7 @@ NmDaa:     db "DAA against decimal arithmetic",0
 ExDaa:     db "the decimal adjust disagrees with the same sum done a digit at a time",0
 
 
-SECTION "Registry2", ROM0
+SECTION FRAGMENT "Registry2", ROM0
 
 ; ---------------------------------------------------------------------------
 NmCyc:  db "CYC: instruction and memory timing",0
@@ -138,6 +138,7 @@ ListCyc:
     check ChkCycMore,  6, NmCycMore,  ExCyc
     check ChkCycPhase, 7, NmCycPhase, ExCycPhase
     check ChkCycLand,  8, NmCycLand,  ExCycLand
+    check ChkDoubleSpeedCyc, 9, NmCycSpeed, ExCycSpeed
     dw 0
 
 NmCycLand:  db "an interrupt lands on the cycle it was raised",0
@@ -151,6 +152,18 @@ NmCycJump:  db "jumps taken and not taken",0
 NmCycCb:    db "CB-prefixed operations",0
 NmCycMore:  db "restarts, returns and the register-addressed load",0
 ExCyc:      db "an instruction took a different number of machine cycles from the published opcode table",0
+
+; GB-CYC-09's name and explanation live in bank 2, the CYC/TIM area's own bank,
+; on the same licence CPU's prose has in bank 1: RunCheckList maps the area's
+; bank before the check runs and leaves it mapped through the reporting.
+; ROM0 has no room left for another sentence (AGENTS.md, "The fixed bank is
+; full").
+SECTION "RegistryTextCyc", ROMX, BANK[2]
+
+NmCycSpeed: db "KEY1's double speed switch, and what it does not change",0
+ExCycSpeed: db "either the switch itself did not engage, or it changed how many machine cycles an instruction costs, which it must not",0
+
+SECTION FRAGMENT "Registry2", ROM0
 
 ; ---------------------------------------------------------------------------
 NmTim:  db "TIM: the divider and the timer",0
@@ -495,6 +508,11 @@ CoverageText::
     db "  * the boot ROM itself, which has already finished.",13,10
     db "  * other consoles. Every run reports which machine it thinks it is on",13,10
     db "    and skips what does not apply, rather than guessing.",13,10
+    db "  * which VRAM source a double-speed PPU write commits to. GB-CYC-09",13,10
+    db "    and GB-PPU-07 check that double speed switches at all and that the",13,10
+    db "    PPU's dot clock does not speed up with the CPU, but a commit-timing",13,10
+    db "    bug that only changes which tile a dot samples is a pixel, and no",13,10
+    db "    cartridge can read one. See docs/double-speed.md.",13,10
     db 13,10
     db "DELIBERATELY THIN, because other people cover it far better:",13,10
     db "  * exhaustive instruction sweeps -- Blargg's cpu_instrs.",13,10

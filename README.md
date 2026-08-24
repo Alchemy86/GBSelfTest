@@ -5,17 +5,17 @@
 <p align="center">
   <a href="LICENSE"><img alt="licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue"></a>
   <a href="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml"><img alt="build" src="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml/badge.svg"></a>
-  <a href="docs/CHECKS.md"><img alt="101 checks" src="https://img.shields.io/badge/checks-101-9bbc0f"></a>
+  <a href="docs/CHECKS.md"><img alt="102 checks" src="https://img.shields.io/badge/checks-102-9bbc0f"></a>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/report-sameboy-dmg.png" alt="The report on screen: eleven areas, 100 of 101 checks with one skipped, Passed" width="480">
+  <img src="docs/screenshots/report-sameboy-dmg.png" alt="The report on screen: eleven areas, 100 of 102 checks with two skipped, Passed" width="480">
 </p>
 
 **Boot this on any emulator or on a real console, and it tells you what is broken
 and where to read about it.**
 
-One file. No host, no reference images, no setup: it runs 101 checks unattended and
+One file. No host, no reference images, no setup: it runs 102 checks unattended and
 reports the verdict twice over — as text on the screen, and as the same text out
 of the link port so a machine can read it with nobody watching.
 
@@ -27,7 +27,7 @@ link port carries the whole story, including the measured value, one line of
 hardware explanation, and the URL to read.
 
 <p align="center">
-  <img src="docs/screenshots/report-peanut.png" alt="A failing report: per-area FAILs, 68 of 100, then the failing codes and where to read about them" width="480">
+  <img src="docs/screenshots/report-peanut.png" alt="A failing report: per-area FAILs, 68 of 102, then the failing codes and where to read about them" width="480">
 </p>
 
 The same failure, as the link port sends it — verbatim, straight from the run that
@@ -90,8 +90,8 @@ GB-PPU-01 ok   a frame is 70224 cycles, measured against DIV
 GB-PPU-02 ok   a scanline is 456 cycles
 ...
 
-TOTAL 100/101 checks, 1 skipped
-cost 147 frames, sent 7950 B
+TOTAL 100/102 checks, 2 skipped
+cost 147 frames, sent 8423 B
 Passed
 ```
 
@@ -146,16 +146,16 @@ The same cartridge, the same hundred checks, two emulators:
 <!-- scoreboard -->
 | implementation | result |
 |---|---:|
-| SameBoy, DMG | 100 / 101, 1 skipped |
-| SameBoy, MGB (Pocket) | 100 / 101, 1 skipped |
-| SameBoy, CGB-E | 96 / 101, 5 skipped |
-| SameBoy, AGB | 97 / 101, 4 skipped |
-| TerminalGB, per-dot renderer | 94 / 101, 1 skipped |
-| TerminalGB, whole-scanline renderer | 86 / 101, 2 skipped |
-| Peanut-GB | 68 / 101, 2 skipped |
+| SameBoy, DMG | 100 / 102, 2 skipped |
+| SameBoy, MGB (Pocket) | 100 / 102, 2 skipped |
+| SameBoy, CGB-E | 97 / 102, 5 skipped |
+| SameBoy, AGB | 98 / 102, 4 skipped |
+| TerminalGB, per-dot renderer | 94 / 102, 2 skipped |
+| TerminalGB, whole-scanline renderer | 86 / 102, 3 skipped |
+| Peanut-GB | 68 / 102, 3 skipped |
 <!-- /scoreboard -->
 
-Measured 2026-08-21 with `tools/scoreboard.sh`, which runs every row and writes
+Measured 2026-08-24 with `tools/scoreboard.sh`, which runs every row and writes
 [`docs/scoreboard.md`](docs/scoreboard.md); it names the exact revision of each
 emulator it measured.
 
@@ -171,7 +171,7 @@ are the range the checks can tell apart.
 
 ## What it checks
 
-Eleven areas, 101 checks. The full list with explanations is
+Eleven areas, 102 checks. The full list with explanations is
 [`docs/CHECKS.md`](docs/CHECKS.md).
 
 | area | what it is about |
@@ -205,6 +205,13 @@ cycle boundaries — or hear sound as sound; register behaviour and the length
 counter are checked, what comes out of the speaker is not. The cartridge prints its
 own coverage statement, including everything it deliberately leaves to Blargg,
 Mooneye, SameSuite and the MBC suites, at the end of every run.
+
+The same limit applies to Color hardware's double speed: `GB-CYC-09` and
+`GB-PPU-07` check that the switch itself works and that the PPU's dot clock
+does not speed up with the CPU, but a commit-timing bug that only changes
+*which* tile a dot samples — the exact bug behind TerminalGB's `c575bb4` — is
+purely a pixel, and no cartridge can read one. See
+[`docs/double-speed.md`](docs/double-speed.md) for the survey and why.
 
 ### The rendering fingerprint
 

@@ -146,6 +146,71 @@ row in the scoreboard, not just the ones a given change touched) and should
 land as its own commit with a fresh `tools/scoreboard.sh --write` run, not as
 a side effect of adding a check.
 
+## Double speed needs the CGB header flag, or every double-speed check silently skips forever
+
+`FIXFLAGS` did not pass `rgbfix -c` until GB-CYC-09/GB-PPU-07 needed it. Without
+it, the ROM's header byte at `$0143` is `$00`, and a real Color console (or an
+accurate emulator) boots a cartridge with no CGB flag into **DMG compatibility
+mode**, where `KEY1` and double speed do not exist at all (Pan Docs, "CGB
+Registers": KEY1 is "CGB Mode only"). `wConsole` still correctly reports CGB —
+`DetectConsole` reads the boot handover registers, which don't care about the
+cartridge's own header — so a double-speed check written the usual way
+(`cp CONSOLE_CGB` / `cp CONSOLE_AGB`) builds, links, and *skips on every run,
+on every console, forever*, and nothing about that looks wrong until you
+specifically check whether it ever ran. `-c` (not `-C`) is what fixes it:
+backward-compatible, since the DMG and MGB checks still have to run on the
+same ROM. Confirmed by building both ways and watching GB-CYC-09/GB-PPU-07
+go from permanently-skip to actually-run with zero change to any other
+check's verdict on any console.
+
+## `FlipSpeed` clobbers `A`; save what you're comparing before calling it again
+
+`checkutil.asm`'s `FlipSpeed` runs the documented STOP-based speed-switch
+sequence and, like every subroutine in this file, makes no promise about
+which registers survive it — it loads `A` repeatedly on the way through
+`LcdOff` and the `KEY1` write. A check that measures something into `A`, then
+calls `FlipSpeed` to return to the starting speed, then compares against `A`
+is comparing `FlipSpeed`'s own leftover value, not the measurement — and it
+does so silently, producing a plausible, *constant* wrong number instead of a
+crash. This shipped once in GB-PPU-07's double-speed half and was only caught
+because the wrong number ($1) disagreed with an independent measurement on
+two unrelated emulators (SameBoy and TerminalGB) that had already established
+the right one ($2). Save into a register `FlipSpeed` doesn't touch (`B`, `C`,
+`D`, `E`, `H`, `L` are all safe) before calling it a second time.
+
+## A PPU write-commit timing bug can be a pure pixel, and this cartridge cannot see it
+
+Not every PPU inaccuracy leaves a measurable trace. TerminalGB's `c575bb4`
+(a CGB `LCDC` write-commit stagger that didn't fit inside a double-speed
+machine cycle) changes *which* VRAM data source the fetcher reads from at a
+given dot — not how long anything takes, not any readable register, nothing
+DMA or interrupt related. The existing STAT-sled technique that every
+`GB-PPU-0*` check uses measures *durations*; it has nothing to say about
+*content*. GB-PPU-07's double-speed half checks the general fact this bug
+depended on (the PPU's dot clock doesn't speed up with the CPU) but cannot
+and does not check the specific bug, and no rewording of a timing check ever
+will. See `docs/double-speed.md` for the full survey; the short version is in
+`checks_ppu.asm`'s own comment beside GB-PPU-07. When a PPU bug's only effect
+is which of two already-equal-cost sources gets read, it needs Mealybug or a
+screenshot, not this cartridge.
+
+## A local `.terminalgb` checkout used for investigation must be restored to its pin before it's trusted again
+
+Checking out a different commit in `.terminalgb` to read a fix or reproduce a
+bug (this repo's own investigative habit, and a good one) leaves that
+checkout sitting on whatever you last visited. `tools/run-terminalgb.sh` only
+clones-and-pins on first use (`if [ ! -d "$DEST/.git" ]`); if `.terminalgb`
+already exists, it runs whatever commit is currently checked out, silently,
+with no complaint that it isn't the pinned `TERMINALGB_REF`. This produced a
+scoreboard row that looked like a huge, exciting accuracy jump (a stale
+committed baseline of 94/101 against a freshly measured 99/102) that was
+actually nothing to do with this session's changes — the checkout had been
+left on a much newer commit from an unrelated fix investigation earlier in
+the same session. `git checkout --quiet "$TERMINALGB_REF"` (the exact ref
+`tools/run-terminalgb.sh` defines) before trusting any scoreboard or
+screenshot regeneration that touches TerminalGB, every time you've touched
+that checkout for any other reason first.
+
 ## The brand
 
 `docs/brand/generate.py` is the only source of truth for the logo and icon. Edit

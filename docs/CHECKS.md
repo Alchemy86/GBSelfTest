@@ -187,6 +187,12 @@ advancing the clocks once per instruction keeps every rate right and still fails
 
 running a batch of instructions and delivering at the end of it keeps every rate right and still fails this.
 
+### GB-CYC-09
+
+**KEY1's double speed switch, and what it does not change**
+
+either the switch itself did not engage, or it changed how many machine cycles an instruction costs, which it must not.
+
 ## TIM: the divider and the timer
 
 ### GB-TIM-01

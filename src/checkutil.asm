@@ -219,6 +219,31 @@ WaitVBlankEdge::
     ret
 
 ; ---------------------------------------------------------------------------
+; FlipSpeed — switch the CPU to whichever speed it is not currently running
+; at, via the documented STOP sequence (Pan Docs, "KEY1 Register": set bit 0,
+; execute STOP, and "the Game Boy will operate at the 'other' speed" once it
+; resumes -- bit 0 clears itself). CGB/AGB only; callers decide that.
+;
+; The LCD is switched off first regardless of console: "Reducing Power
+; Consumption" documents that leaving it on for a STOP risks a black screen on
+; Color and a damaged DMG, and this routine has no way to know what the caller
+; was drawing. IE and IF end up cleared, which is the same state DisarmSled
+; already leaves every PPU timing check in.
+; ---------------------------------------------------------------------------
+FlipSpeed::
+    call LcdOff
+    di
+    xor a
+    ldh [rIE], a
+    ldh [rIF], a
+    ld a, $30
+    ldh [rP1], a
+    ld a, 1
+    ldh [rKEY1], a
+    stop
+    ret
+
+; ---------------------------------------------------------------------------
 ; TestVals — the byte values every sweep uses. Not a random selection: these
 ; are the boundaries where a carry, a half-carry, a sign or a zero can appear,
 ; which is where an arithmetic bug lives. Sweeping all 65536 pairs would take

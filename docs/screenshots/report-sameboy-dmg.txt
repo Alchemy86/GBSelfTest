@@ -30,6 +30,8 @@ GB-CYC-05 ok   CB-prefixed operations
 GB-CYC-06 ok   restarts, returns and the register-addressed load
 GB-CYC-07 ok   an access lands on its own cycle
 GB-CYC-08 ok   an interrupt lands on the cycle it was raised
+GB-CYC-09 skip KEY1's double speed switch, and what it does not change
+      -> not run: KEY1 does not exist below Color hardware
 --- TIM: the divider and the timer
 GB-TIM-01 ok   the divider and the timer share one counter
 GB-TIM-02 ok   writing DIV clears it
@@ -142,6 +144,11 @@ NOT TESTED, and not testable from a cartridge:
   * the boot ROM itself, which has already finished.
   * other consoles. Every run reports which machine it thinks it is on
     and skips what does not apply, rather than guessing.
+  * which VRAM source a double-speed PPU write commits to. GB-CYC-09
+    and GB-PPU-07 check that double speed switches at all and that the
+    PPU's dot clock does not speed up with the CPU, but a commit-timing
+    bug that only changes which tile a dot samples is a pixel, and no
+    cartridge can read one. See docs/double-speed.md.
 
 DELIBERATELY THIN, because other people cover it far better:
   * exhaustive instruction sweeps -- Blargg's cpu_instrs.
@@ -152,6 +159,6 @@ This is a first-response cartridge: broad, fast, self-explaining, and
 one file. It is not a replacement for any of the above.
 
 
-TOTAL 100/101 checks, 1 skipped
-cost 147 frames, sent 7950 B
+TOTAL 100/102 checks, 2 skipped
+cost 147 frames, sent 8423 B
 Passed

@@ -610,13 +610,24 @@ ChkMode3Base::
 .noteSkip db "not run: the coincidence interrupt never fired, so there is no way to stand on a known cycle of a known scanline",0
 
 ; ---------------------------------------------------------------------------
-; GB-PPU-07 — fine scrolling costs the fetcher time.
+; GB-PPU-07 — fine scrolling costs the fetcher time, and twice as much once
+; double speed halves how wide a machine cycle is.
+;
+; The original measurement is unchanged: an SCX of 4 must make mode 3 four
+; dots -- one machine cycle -- longer. On Color hardware, once that passes,
+; the identical four-dot penalty is measured again after switching to double
+; speed (Pan Docs, "KEY1 Register": the CPU and the timer double, the LCD does
+; not), where a machine cycle is only two dots wide -- so the same penalty
+; must now cost two machine cycles. An emulator that scales the PPU's own
+; clock with the CPU's would still show one; that is the closest a cartridge
+; with no framebuffer gets to the class of bug behind this suite. It is not
+; the bug itself -- see docs/double-speed.md for the one this cannot see and
+; why.
 ; ---------------------------------------------------------------------------
-ChkMode3Scx::
-    call StatWorks
-    ld a, [wStatWorks]
-    or a
-    jr z, .noStat
+
+; MeasureScxDelta -- the extra machine cycles an SCX of 4 costs mode 3, at
+; whatever speed the CPU is currently running. Leaves SCX at zero.
+MeasureScxDelta:
     call SceneBase
     call ArmSled
     call MeasureE3
@@ -631,23 +642,47 @@ ChkMode3Scx::
     call DisarmSled
     xor a
     ldh [rSCX], a
-    ld a, [P_E3]
-    ld c, a
+    ld hl, P_E3
     ld a, b
-    sub c                   ; the extra machine cycles, so four dots each
+    sub [hl]                ; the extra machine cycles, so four dots each
+    ret
+
+ChkMode3Scx::
+    call StatWorks
+    ld a, [wStatWorks]
+    or a
+    jr z, .noStat
+    call MeasureScxDelta
     ld b, 1
     ld c, 0
     call Within
+    jr c, .bad
+    ld a, [wConsole]
+    and 2                   ; set only for CONSOLE_CGB (2) and CONSOLE_AGB (3);
+    ret z                   ; AND already cleared carry, so this is a clean pass
+.double
+    call FlipSpeed
+    call MeasureScxDelta
+    ld b, a                 ; FlipSpeed below clobbers A; keep the delta safe
+    call FlipSpeed
+    ld a, b
+    ld b, 2
+    ld c, 0
+    call Within
     ret nc
-    ld b, 1
+    call SetNums8
+    ld hl, .noteDouble
+    jp FailNote
+.bad
     call SetNums8
     ld hl, .note
     jp FailNote
 .noStat
     ld hl, .noteSkip
     jp SkipWith
-.note     db "an SCX of 4 must make mode 3 four cycles longer: the first four pixels of the leftmost tile are fetched and thrown away. A mode 3 of fixed length cannot show this",0
-.noteSkip db "not run: the coincidence interrupt never fired",0
+.note       db "an SCX of 4 must make mode 3 four cycles longer: the first four pixels of the leftmost tile are fetched and thrown away. A mode 3 of fixed length cannot show this",0
+.noteSkip   db "not run: the coincidence interrupt never fired",0
+.noteDouble db "one cycle in double speed, not two: a cycle is half as wide",0
 
 ; ---------------------------------------------------------------------------
 ; GB-PPU-08 — objects cost the fetcher time.

@@ -33,6 +33,8 @@ GB-CYC-07 FAIL an access lands on its own cycle
       -> the four-cycle read came out further than one tick from the three-cycle read at the same delay. They are one machine cycle apart and a tick is four, so the only differences possible are none and one
       -> https://github.com/Alchemy86/TerminalGB/blob/main/docs/gbselftest.md#gb-cyc-07
 GB-CYC-08 ok   an interrupt lands on the cycle it was raised
+GB-CYC-09 skip KEY1's double speed switch, and what it does not change
+      -> not run: KEY1 does not exist below Color hardware
 --- TIM: the divider and the timer
 GB-TIM-01 ok   the divider and the timer share one counter
 GB-TIM-02 ok   writing DIV clears it
@@ -233,6 +235,11 @@ NOT TESTED, and not testable from a cartridge:
   * the boot ROM itself, which has already finished.
   * other consoles. Every run reports which machine it thinks it is on
     and skips what does not apply, rather than guessing.
+  * which VRAM source a double-speed PPU write commits to. GB-CYC-09
+    and GB-PPU-07 check that double speed switches at all and that the
+    PPU's dot clock does not speed up with the CPU, but a commit-timing
+    bug that only changes which tile a dot samples is a pixel, and no
+    cartridge can read one. See docs/double-speed.md.
 
 DELIBERATELY THIN, because other people cover it far better:
   * exhaustive instruction sweeps -- Blargg's cpu_instrs.
@@ -243,6 +250,6 @@ This is a first-response cartridge: broad, fast, self-explaining, and
 one file. It is not a replacement for any of the above.
 
 
-TOTAL 68/101 checks, 2 skipped
-cost 147 frames, sent 17591 B
+TOTAL 68/102 checks, 3 skipped
+cost 147 frames, sent 18064 B
 Failed
