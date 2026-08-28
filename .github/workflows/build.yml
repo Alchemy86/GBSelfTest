@@ -22,7 +22,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bison libpng-dev
 
       - name: fetch and build the pinned RGBDS
-        run: tools/fetch-rgbds.sh
+        run: |
+          tools/fetch-rgbds.sh
+          echo "$PWD/.rgbds" >> "$GITHUB_PATH"
 
       - name: build
         run: make RGBDS=$PWD/.rgbds

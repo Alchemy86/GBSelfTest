@@ -219,3 +219,46 @@ commit. Every letterform is an original stroked skeleton path — no font is
 embedded, subset or traced — which is what keeps the files free of any third-party
 licence. It is deliberately the same alphabet, palette and panel as TerminalGB's
 and AtlasGB's marks; only the motif differs. See `docs/brand/README.md`.
+
+## A red build badge here had two independent causes — check both
+
+`build`'s SameBoy step (`run it on SameBoy, which nobody here wrote`) failed
+for a real reason on every one of this repo's first three CI runs
+(2026-08-15): the workflow built RGBDS but never put it on `PATH`, so
+`tools/run-sameboy.sh`'s own `make -C SameBoy tester` cannot find `rgbgfx` to
+assemble the boot-ROM logo and dies in about nine seconds with `rgbgfx: No
+such file or directory`. It only ever worked on a laptop because a prior
+local `.rgbds` build happened to already be on `PATH`; a clean shell with
+`.sameboy` cleared and no `.rgbds` on `PATH` reproduces the exact failure
+every time, and adding `.rgbds` to `PATH` before calling the script fixes it
+(both DMG and Pocket runs then pass). Fixed in `build.yml` by appending
+`$PWD/.rgbds` to `$GITHUB_PATH` right after `fetch-rgbds.sh` runs — never
+`export RGBDS=...` for this, that name collides with SameBoy's own Makefile
+variable of the same name (see "Building and running" above).
+
+Separately, starting a few days after this repo's first CI runs (2026-08-20
+here), every job on this private repo has failed in 2-4 seconds with
+`runner_id: 0`, `runner_name: ""`, `steps: []` — the job never reaches a
+runner. The check-run annotation gives the reason: *"The job was not started
+because recent account payments have failed or your spending limit needs to
+be increased."* This is an account-level GitHub Actions billing gate, not
+anything in this repo, and it also affects TerminalGB and AtlasGB (same
+account) — the account's one public repo, `devlog`, is unaffected, because
+public repos get free Actions minutes.
+
+**The two stack.** Because the billing gate started only days after the
+PATH bug shipped, this repo's badge has never once been green, and clearing
+the billing gate alone will not fix that — the PATH fix above is also
+required. Before debugging a red badge here: check a failing job's
+`created_at`/`started_at` delta and its check-run annotations first. A
+few-second job with no steps and that annotation is the billing gate; a job
+that actually ran steps and failed is a real regression, and the billing
+gate can be hiding one even now — a green run after billing clears is not
+proof of anything that failed silently underneath it before.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
