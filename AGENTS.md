@@ -256,48 +256,75 @@ that actually ran steps and failed is a real regression, and the billing
 gate can be hiding one even now — a green run after billing clears is not
 proof of anything that failed silently underneath it before.
 
-## The header logo, `rgbfix -L`, and what this project's tools cannot tell you about it
+## The header logo is Nintendo's, on purpose, and `make agent-logo` is a separate opt-in ROM, not a build flag on this one
 
-The cartridge header logo at `$0104-$0133` is not written by hand in
-assembly here — it never has been. `FIXFLAGS` in the `Makefile` accepted
-`rgbfix -v`'s default (the real Nintendo logo) until this project adopted its
-own; the mechanism for a custom one is `rgbfix`'s own `-L <file>`, added to
-`FIXFLAGS` pointing at `src/boot_logo.bin`. **Follow that pattern, don't
-hand-author header bytes in source** — this is the whole reason `FIXFLAGS`
-carries a `-v` in the first place.
+The default cartridge — `dist/gbselftest.gb`, what `make`/`make all` builds —
+carries the real Nintendo logo, via `rgbfix -v`'s own default. That is
+final, not provisional: this project's own logo (AgentGB's "agent-bold"
+design) was tried in the header here and measured to **break booting on a
+real, current, mainstream emulator**, so it never goes in
+`dist/gbselftest.gb`. The captain's ruling: keep the logo as a loadable
+thing for filming and testing, not as part of the normal run.
 
-`-L`'s file format is a trap: it is **not** the 48 packed header bytes that
-AgentGB's `tools/boot_logo.py`'s `preview`/`patch` subcommands print or write.
-`rgbfix` (`src/fix/main.cpp`'s `initLogo`) re-derives the header's nibble
-layout itself from a *differently* nibble-arranged 48-byte input, so feeding
-it the already-packed header hex double-transforms it into a different,
+**What broke, measured, not guessed:** mGBA (the captain's own designated
+gold-standard reference), loaded through the same `libretro-mgba` core
+AgentGB's `foreign/` harness already drives (`projects/agentgb/AGENTS.md`
+has the no-root `rpm2cpio` install), **refuses to load a cartridge with a
+non-Nintendo header logo at all** — `retro_load_game` returns `false`
+before a single instruction runs. Read from mGBA's own source, not
+assumed: `GBIsROM` (mGBA's `src/gb/gb.c`), called from `mCoreFindVF` during
+load, fingerprints "is this a Game Boy ROM" by checking 4 bytes at `$0104`
+against Nintendo's real logo (or two known Sachen-bootleg fingerprints, or
+a GBX footer) and rejects anything else — before mGBA's own separate
+boot-time HLE logo-render code, which doesn't compare anything either, ever
+runs. Verified directly, not inferred: the identical cartridge, byte for
+byte except `$0104-$0133`, loads and runs fine in the same core with the
+Nintendo logo. Real hardware's boot ROM does its own, separate, full
+48-byte comparison and refuses hand-off on a mismatch too (Pan Docs,
+"Power-Up Sequence") — untested here for lack of a console, and there is no
+reason to expect it more forgiving than mGBA was.
+
+Earlier testing (SameBoy, TerminalGB, Peanut-GB — none of which enforce
+this check, see below) found no problem with a custom logo. **That was the
+trap, not the answer**: absence of a failure on three lenient
+implementations proved nothing about the one that matters, and mGBA was the
+one test that actually had teeth. If a future change touches the header
+logo again, mGBA is not optional to test against just because it looks like
+a fourth data point — it is the one that disagrees.
+
+**The `agent-logo` Makefile target** (see its own long comment there) builds
+`dist/gbselftest-agent-logo.gb` — gitignored, never committed, never the
+file anything points at — with `agent-bold` in place of Nintendo's logo, for
+a screen recording or a controlled run on an emulator that doesn't enforce
+the check. It shares `FIXFLAGS` with the real build plus one added `-L`; it
+does not duplicate or diverge from the default build in anything else.
+
+**`-L`'s file format is a trap, independent of any of the above**: it is
+**not** the 48 packed header bytes that AgentGB's `tools/boot_logo.py`'s
+`preview`/`patch` subcommands print or write. `rgbfix` (`src/fix/main.cpp`'s
+`initLogo`) re-derives the header's nibble layout itself from a
+*differently* nibble-arranged 48-byte input, so feeding it the
+already-packed header hex double-transforms it into a different,
 wrong-but-still-decodable image. There is no `boot_logo.py` subcommand that
-emits the format `-L` wants. To regenerate `src/boot_logo.bin` after a design
-change: patch a scratch ROM with `boot_logo.py patch`, invert `rgbfix`'s
-`initLogo` transform (a closed-form nibble permutation, worked out once
-against `initLogo`'s source rather than guessed) to get the `-L` input,
-`rgbfix -L` it into another scratch copy, and diff the two ROMs' `$0104-$0133`
-— they must match. Do not skip that round-trip: a plausible-looking wrong
-`-L` file decodes to a plausible-looking wrong logo, not a build error.
+emits the format `-L` wants. To regenerate `src/boot_logo.bin` after a
+design change: patch a scratch ROM with `boot_logo.py patch`, invert
+`rgbfix`'s `initLogo` transform (a closed-form nibble permutation, worked
+out once against `initLogo`'s source rather than guessed) to get the `-L`
+input, `rgbfix -L` it into another scratch copy, and diff the two ROMs'
+`$0104-$0133` — they must match. Do not skip that round-trip: a
+plausible-looking wrong `-L` file decodes to a plausible-looking wrong logo,
+not a build error.
 
-Separately, and more importantly: **this project has no tool that tests
-whether a non-Nintendo header logo actually boots.** Real Game Boy boot ROMs
-compare the header logo against a reference and refuse hand-off on a
-mismatch — the original anti-piracy lockout, Pan Docs' "Power-Up Sequence."
-None of the three implementations this project tests against enforce it:
-SameBoy's own boot ROMs (`.sameboy/SameBoy/BootROMs/{dmg,cgb,sgb}_boot.asm`)
-load and animate whatever logo the cartridge provides but never compare it
-to anything (confirmed by reading the assembly — there is no reference copy
-and no comparison), and `gb.c` says as much outright for the SGB HLE path
-("the SGB HLE does not perform any header validity checks"); TerminalGB's
-`tools/run-terminalgb.sh` and Peanut-GB run this cartridge without executing
-a boot ROM at all (both start from a synthesized post-boot state), so no
-logo-checking code ever runs. A clean run on all seven scoreboard
-configurations after switching the logo is therefore evidence that the
-*checks* didn't regress, and **no evidence at all** about real-hardware or
-strict-emulator boot compatibility — that question needs either a real
-console or an emulator that runs an accurate boot ROM in its enforcing form,
-neither of which this repo has.
+For the record, what does NOT enforce the header-logo check, so a clean run
+there is not evidence of anything beyond itself: SameBoy's own boot ROMs
+(`.sameboy/SameBoy/BootROMs/{dmg,cgb,sgb}_boot.asm`) load and animate
+whatever logo the cartridge provides but never compare it to anything
+(confirmed by reading the assembly — there is no reference copy and no
+comparison), and `gb.c` says as much outright for the SGB HLE path ("the
+SGB HLE does not perform any header validity checks"); TerminalGB's
+`tools/run-terminalgb.sh` and Peanut-GB run this cartridge without
+executing a boot ROM at all (both start from a synthesized post-boot
+state), so no logo-checking code ever runs there either.
 
 ## Maintaining this file
 

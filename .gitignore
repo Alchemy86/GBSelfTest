@@ -2,6 +2,9 @@
 *.map
 *.sym
 build/
+# The filming/testing-only agent-bold-logo variant (`make agent-logo`) is
+# never distributed -- see the Makefile's `agent-logo` target.
+/dist/gbselftest-agent-logo.gb
 /rgbds/
 /.sameboy/
 /.rgbds/

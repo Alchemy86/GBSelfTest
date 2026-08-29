@@ -61,15 +61,14 @@ That is the whole of it — no toolchain, no arguments, no host. On real hardwar
 put it on a flash cart. In an emulator, load it. It finishes in under ten seconds
 and stops on the verdict.
 
-The cartridge header at `$0104-$0133` carries this project's own boot logo
-(generated from AgentGB's `tools/boot_logo.py`, design `agent-bold`) rather than
-the Nintendo logo. Real Game Boy boot ROMs compare that header against a
-reference and refuse to hand off if it doesn't match — the original anti-piracy
-lockout. None of the three implementations in [the scoreboard](#the-scoreboard)
-enforce it (SameBoy's own boot ROMs skip the comparison outright, and
-TerminalGB/Peanut-GB run this cartridge without executing a boot ROM at all), so
-a clean run here does not establish that a stricter emulator or real hardware
-would hand off to this cartridge.
+The cartridge header carries the real Nintendo logo, on purpose: real Game Boy
+boot ROMs compare that header against a reference and refuse to hand off if it
+doesn't match, so anything else risks the one property this project cannot
+trade away — booting on somebody else's hardware or emulator. `make agent-logo`
+builds a second ROM carrying this project's own logo instead, for filming and
+controlled test runs only; it is never the file `dist/gbselftest.gb` points at
+and is not distributed. See the Makefile's `agent-logo` target for what that
+substitution actually breaks — mGBA refuses to load it outright.
 
 For CI, capture the link port, which is what every Game Boy test-ROM runner
 already does for Blargg's ROMs. The last line is `Passed` or `Failed`, on purpose
