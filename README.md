@@ -61,6 +61,16 @@ That is the whole of it — no toolchain, no arguments, no host. On real hardwar
 put it on a flash cart. In an emulator, load it. It finishes in under ten seconds
 and stops on the verdict.
 
+The cartridge header at `$0104-$0133` carries this project's own boot logo
+(generated from AgentGB's `tools/boot_logo.py`, design `agent-bold`) rather than
+the Nintendo logo. Real Game Boy boot ROMs compare that header against a
+reference and refuse to hand off if it doesn't match — the original anti-piracy
+lockout. None of the three implementations in [the scoreboard](#the-scoreboard)
+enforce it (SameBoy's own boot ROMs skip the comparison outright, and
+TerminalGB/Peanut-GB run this cartridge without executing a boot ROM at all), so
+a clean run here does not establish that a stricter emulator or real hardware
+would hand off to this cartridge.
+
 For CI, capture the link port, which is what every Game Boy test-ROM runner
 already does for Blargg's ROMs. The last line is `Passed` or `Failed`, on purpose
 and by that convention, so an existing runner needs no changes:
