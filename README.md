@@ -6,6 +6,7 @@
   <a href="LICENSE"><img alt="licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue"></a>
   <a href="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml"><img alt="build" src="https://github.com/Alchemy86/GBSelfTest/actions/workflows/build.yml/badge.svg"></a>
   <a href="docs/CHECKS.md"><img alt="102 checks" src="https://img.shields.io/badge/checks-102-9bbc0f"></a>
+  <a href="https://github.com/Alchemy86/GBSelfTest/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/Alchemy86/GBSelfTest?label=download&color=0f380f"></a>
 </p>
 
 <p align="center">
@@ -56,10 +57,18 @@ scoreboard](#the-scoreboard).
 
 ## Running it
 
-**Download [`dist/gbselftest.gb`](dist/gbselftest.gb), boot it, read the screen.**
-That is the whole of it — no toolchain, no arguments, no host. On real hardware,
-put it on a flash cart. In an emulator, load it. It finishes in under ten seconds
-and stops on the verdict.
+**[Download the ROM from the latest
+release](https://github.com/Alchemy86/GBSelfTest/releases/latest), boot it, read
+the screen.** That is the whole of it — no toolchain, no arguments, no host. On
+real hardware, put it on a flash cart. In an emulator, load it. It finishes in
+under ten seconds and stops on the verdict.
+
+Each release carries two files: `gbselftest-<version>.gb`, the cartridge, and
+`CHECKS.md`, the reference for every code it can print. Both are built by
+[CI](.github/workflows/release.yml) from the tag, with the RGBDS version pinned
+in the repository, and the job refuses to publish a ROM that differs from the
+one committed to [`dist/`](dist/) — so the download and a `git clone` cannot
+disagree. Nothing is hand-uploaded.
 
 The cartridge header carries the real Nintendo logo, on purpose: real Game Boy
 boot ROMs compare that header against a reference and refuse to hand off if it
@@ -288,6 +297,23 @@ A host that only wants the verdict can stop as soon as it sees `Passed` or `Fail
 A host that wants the report has to pay for it, and that is the right trade: the
 explanations are the product.
 
+## Why this is its own repository
+
+The cartridge is developed alongside [TerminalGB](https://github.com/Alchemy86/TerminalGB),
+which gates its own CI on it, and it is deliberately **not** kept inside that
+project. An emulator author evaluating a test ROM should not have to take on the
+emulator that ships it: this repository is MIT, contains nothing but original
+work (see [Licence and contents](#licence-and-contents)), and can be vendored,
+forked or re-released by anybody without a licence question or a dependency on
+us. TerminalGB consumes it the same way anyone else would — as a published
+release asset, pinned by checksum, never as source.
+
+The second reason is that it has to be able to disagree with us. A test suite
+living in the tree of one of the implementations it scores is a suite whose
+expected values will eventually drift towards that implementation. Keeping it
+separate, and developing it against three emulators at once, is what stops that
+— see [the rule](#the-rule-that-makes-the-verdict-worth-anything) above.
+
 ## Building
 
 Needs [RGBDS](https://rgbds.gbdev.io) and nothing else.
@@ -302,6 +328,14 @@ The exact version releases are built with is pinned in
 [`tools/fetch-rgbds.sh`](tools/fetch-rgbds.sh), and CI uses that script, so a
 release is reproducible from source. The built ROM is committed to
 [`dist/`](dist/) so that using it needs no toolchain at all.
+
+Releases are tags. Pushing `vX.Y.Z` runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds
+the cartridge from that tag, puts it through the same gates every push gets
+— reproducible build, documentation in step with the registry, and a passing
+run on SameBoy — and only then publishes. Versions are semantic with respect to
+the *codes*: a new check is a minor bump, and a code changing meaning would be a
+major one, which is a thing that should not happen.
 
 Everything the documentation shows is regenerated rather than edited:
 `tools/screenshots.sh` re-takes every picture from the emulators' own

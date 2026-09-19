@@ -1,0 +1,117 @@
+# Publish a release: build the cartridge from the pinned toolchain, hold it to
+# the same bar every push is held to, and attach the ROM people actually
+# download.
+#
+# The build is done HERE rather than uploaded from a laptop on purpose. A
+# release asset is the one artefact of this project that other people run
+# without reading, so the thing that produced it has to be inspectable: this
+# file, plus the RGBDS version pinned in tools/fetch-rgbds.sh, is the whole
+# provenance. `make check` proves the two builds are byte-identical, and the
+# diff against the committed dist/gbselftest.gb proves the published ROM is
+# the one in the tree -- so a downloader and a `git clone` cannot disagree.
+#
+# Cutting one:
+#
+#   git tag -a v1.2.0 -m "..." && git push origin v1.2.0
+#
+# and this does the rest. Nothing is hand-uploaded.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'existing tag to (re-)publish, e.g. v1.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: name the release after the tag
+        run: echo "TAG=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
+
+      - name: install RGBDS build dependencies
+        run: sudo apt-get update && sudo apt-get install -y bison libpng-dev
+
+      - name: fetch and build the pinned RGBDS
+        run: |
+          tools/fetch-rgbds.sh
+          echo "$PWD/.rgbds" >> "$GITHUB_PATH"
+
+      - name: build
+        run: make RGBDS=$PWD/.rgbds
+
+      - name: the build is reproducible
+        run: make RGBDS=$PWD/.rgbds check
+
+      # A release that ships a ROM the repository does not contain would make
+      # every "clone it and build it yourself" instruction here a lie.
+      - name: the published ROM is the one this source builds
+        run: |
+          git diff --exit-code -- dist/gbselftest.gb ||
+            { echo "dist/gbselftest.gb is not what src/ builds; do not release this"; exit 1; }
+
+      - name: the check reference matches the registry
+        run: tools/gen-docs.py --check
+
+      - name: the README matches the build
+        run: tools/check-readme.py
+
+      # Same gate as every push. A tag is not a licence to ship something that
+      # does not pass on an emulator nobody here wrote.
+      - name: it passes on SameBoy, which nobody here wrote
+        run: |
+          tools/run-sameboy.sh dmg 20000 | tee /tmp/report.txt
+          tail -1 /tmp/report.txt | tr -d '\r' | grep -qx Passed ||
+            { echo "the cartridge does not pass on SameBoy; see the report above"; exit 1; }
+
+      # The numbers in the notes come out of the build, the same rule the
+      # README is held to by tools/check-readme.py. Nothing here is retyped.
+      - name: write the release notes
+        run: |
+          set -eu
+          checks=$(tools/gen-docs.py --check | sed -n 's/.*(\([0-9]*\) checks).*/\1/p')
+          {
+            printf '**A Game Boy cartridge that tests the machine it is running on.** Boot it on any emulator or on real hardware: it runs %s checks unattended and reports the verdict twice over, on the screen and out of the link port so a host can capture it with nobody watching.\n\n' "$checks"
+            printf '## Download\n\n'
+            printf '`gbselftest-%s.gb` below is the whole product. No toolchain, no host, no arguments.\n\n' "$TAG"
+            printf '`CHECKS.md` is the reference for every code the cartridge can print, generated from the same registry this ROM was built from.\n\n'
+            printf '## Measured on this release\n\n'
+            sed -n '/<!-- scoreboard -->/,/<!-- \/scoreboard -->/p' README.md | sed '/scoreboard -->/d'
+            printf '\nSee [the README](https://github.com/%s/blob/%s/README.md) for what that spread means -- it is evidence the checks discriminate, not a league table.\n\n---\n\n' "$GITHUB_REPOSITORY" "$TAG"
+          } > /tmp/notes.md
+          cp dist/gbselftest.gb "/tmp/gbselftest-$TAG.gb"
+          cp docs/CHECKS.md /tmp/CHECKS.md
+          echo "CHECKS=$checks" >> "$GITHUB_ENV"
+
+      # The asset name carries the version because a file called
+      # `gbselftest.gb` on a disk months later says nothing about which one it
+      # is; consumers that pin (TerminalGB's tools/fetch-gbselftest.sh among
+      # them) look for this exact shape.
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "/tmp/gbselftest-$TAG.gb" /tmp/CHECKS.md --clobber
+          else
+            gh release create "$TAG" \
+              --title "GBSelfTest $TAG — $CHECKS checks" \
+              --notes-file /tmp/notes.md \
+              --generate-notes \
+              --verify-tag \
+              "/tmp/gbselftest-$TAG.gb" /tmp/CHECKS.md
+          fi

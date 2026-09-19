@@ -220,41 +220,63 @@ embedded, subset or traced — which is what keeps the files free of any third-p
 licence. It is deliberately the same alphabet, palette and panel as TerminalGB's
 and AtlasGB's marks; only the motif differs. See `docs/brand/README.md`.
 
-## A red build badge here had two independent causes — check both
+## A red build badge here has had three independent causes — check all three
 
-`build`'s SameBoy step (`run it on SameBoy, which nobody here wrote`) failed
-for a real reason on every one of this repo's first three CI runs
-(2026-08-15): the workflow built RGBDS but never put it on `PATH`, so
-`tools/run-sameboy.sh`'s own `make -C SameBoy tester` cannot find `rgbgfx` to
-assemble the boot-ROM logo and dies in about nine seconds with `rgbgfx: No
-such file or directory`. It only ever worked on a laptop because a prior
-local `.rgbds` build happened to already be on `PATH`; a clean shell with
-`.sameboy` cleared and no `.rgbds` on `PATH` reproduces the exact failure
-every time, and adding `.rgbds` to `PATH` before calling the script fixes it
-(both DMG and Pocket runs then pass). Fixed in `build.yml` by appending
-`$PWD/.rgbds` to `$GITHUB_PATH` right after `fetch-rgbds.sh` runs — never
-`export RGBDS=...` for this, that name collides with SameBoy's own Makefile
-variable of the same name (see "Building and running" above).
+This repository's badge was red from its first CI run (2026-08-15) until
+2026-09-19, and three separate things were responsible. The diagnosis order is
+what is worth keeping: **a few-second job with `steps: []` is billing; a job
+that ran steps and failed is a real regression.** Check a failing job's
+`created_at`/`started_at` delta and its check-run annotations before anything
+else.
 
-Separately, starting a few days after this repo's first CI runs (2026-08-20
-here), every job on this private repo has failed in 2-4 seconds with
-`runner_id: 0`, `runner_name: ""`, `steps: []` — the job never reaches a
-runner. The check-run annotation gives the reason: *"The job was not started
-because recent account payments have failed or your spending limit needs to
-be increased."* This is an account-level GitHub Actions billing gate, not
-anything in this repo, and it also affects TerminalGB and AtlasGB (same
-account) — the account's one public repo, `devlog`, is unaffected, because
-public repos get free Actions minutes.
+1. **RGBDS was not on `PATH`** (fixed in `d769fd1`). `tools/run-sameboy.sh`'s
+   own `make -C SameBoy tester` needs `rgbgfx` to assemble the boot-ROM logo
+   and died in about nine seconds without it. `build.yml` appends
+   `$PWD/.rgbds` to `$GITHUB_PATH` — never `export RGBDS=...`, which collides
+   with SameBoy's own Makefile variable of the same name (see "Building and
+   running").
 
-**The two stack.** Because the billing gate started only days after the
-PATH bug shipped, this repo's badge has never once been green, and clearing
-the billing gate alone will not fix that — the PATH fix above is also
-required. Before debugging a red badge here: check a failing job's
-`created_at`/`started_at` delta and its check-run annotations first. A
-few-second job with no steps and that annotation is the billing gate; a job
-that actually ran steps and failed is a real regression, and the billing
-gate can be hiding one even now — a green run after billing clears is not
-proof of anything that failed silently underneath it before.
+2. **An account-level Actions billing gate** (gone since the repository was
+   made public). Every job failed in 2-4 seconds with `runner_id: 0` and
+   `steps: []`, annotated *"the job was not started because recent account
+   payments have failed"*. It affected TerminalGB and AtlasGB too, and never
+   `devlog` — because public repositories get free Actions minutes. Making
+   this repository public cleared it: a dispatched run on 2026-09-19 reached a
+   runner and executed every step.
+
+3. **SameBoy and `sameboy-serial` built by different compilers** (fixed in
+   `tools/run-sameboy.sh`). This one only ever appears in CI, and it is worth
+   understanding rather than just remembering. SameBoy's Makefile picks
+   `clang` over `cc` when clang is on the path (`ifeq ($(origin CC),default)`),
+   and `CONF=release` adds `-flto`; so on a machine with clang installed,
+   `build/obj/Core/*.o` are clang LTO bitcode, and the runner's own
+   `cc -o sameboy-serial ... Core/*.o` — gcc — fails with `apu.c.o: file not
+   recognized: file format not recognized`. **GitHub's `ubuntu-latest` ships
+   clang and every laptop here has only gcc**, so the step passed locally
+   every single time while failing on every CI run. The script now names `CC`
+   on make's command line (which also defeats the clang preference, since
+   `$(origin CC)` is then `command line`) and links with that same `$CC`.
+
+   Reproducing a CI-only failure like this does not need CI: `podman run --rm
+   -v .:/work ubuntu:24.04` with clang installed reproduces it byte for byte
+   in about ten minutes, and is how both the cause and the fix were confirmed
+   here rather than by pushing and watching.
+
+## Releases are cut by CI from a tag, and nothing is hand-uploaded
+
+`.github/workflows/release.yml` builds the cartridge from the tag, holds it to
+the same gates every push gets — reproducible build, `dist/gbselftest.gb`
+identical to what the tag's source builds, documentation in step with the
+registry, a passing SameBoy run — and only then publishes `gbselftest-<tag>.gb`
+and `CHECKS.md` as release assets. Cutting one is `git tag -a vX.Y.Z -m "..."
+&& git push origin vX.Y.Z`; there is deliberately no step where a human
+uploads a ROM, because that asset is the one artefact of this project people
+run without reading.
+
+Both asset names matter to a consumer: TerminalGB's `tools/fetch-gbselftest.sh`
+looks for `gbselftest-<ref>.gb` (falling back to `gbselftest.gb`) and for
+`CHECKS.md` beside it, and records whichever URL actually answered in its lock.
+Renaming either breaks a downstream pin quietly.
 
 ## The header logo is Nintendo's, on purpose, and `make agent-logo` is a separate opt-in ROM, not a build flag on this one
 

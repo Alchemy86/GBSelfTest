@@ -14,6 +14,17 @@
 # work under somebody else's licence (Expat). Needs a C compiler, git and make.
 set -eu
 
+# SameBoy and sameboy-serial must be built by the SAME compiler, and this is
+# what makes sure of it. SameBoy's own Makefile prefers clang when clang is on
+# the path (`ifeq ($(origin CC),default)`), and CONF=release below builds with
+# -flto -- so on a machine with clang installed, build/obj/Core/*.o are clang
+# LTO bitcode, and linking them with a plain `cc` that happens to be gcc dies
+# with `file format not recognized`. That is exactly what happened on GitHub's
+# ubuntu-latest, which ships clang, while every laptop here has only gcc and
+# never saw it. Naming CC on make's command line also defeats the clang
+# override, because `$(origin CC)` is then `command line`, not `default`.
+CC="${CC:-cc}"
+
 MODEL="${1:-dmg}"
 FRAMES="${2:-4000}"
 SHOT="${3:-}"
@@ -32,9 +43,10 @@ if [ ! -x "$DEST/sameboy-serial" ] ||
     # `tester` is the cheapest target that also assembles the boot ROMs, and
     # the boot ROMs matter: GB-BOOT checks the state they hand over.
     if [ -n "$RGBDS_DIR" ]; then PATH="$RGBDS_DIR:$PATH"; export PATH; fi
-    make -C "$DEST/SameBoy" -j"$(nproc)" tester CONF=release >"$DEST/build.log" 2>&1 ||
+    make -C "$DEST/SameBoy" -j"$(nproc)" tester CONF=release CC="$CC" \
+        >"$DEST/build.log" 2>&1 ||
         { tail -20 "$DEST/build.log"; echo "SameBoy build failed, see $DEST/build.log" >&2; exit 1; }
-    cc -O2 -std=gnu99 -I"$DEST/SameBoy" -o "$DEST/sameboy-serial" \
+    "$CC" -O2 -std=gnu99 -flto -I"$DEST/SameBoy" -o "$DEST/sameboy-serial" \
         "$HERE/tools/sameboy-serial.c" "$DEST"/SameBoy/build/obj/Core/*.o -lm -ldl
 fi
 
